@@ -1,3 +1,7 @@
+Thesis.md
+coding_roadmap.md
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

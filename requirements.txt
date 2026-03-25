@@ -1,0 +1,12 @@
+scikit-learn
+pandas
+numpy
+matplotlib
+shap
+lime
+dice-ml
+fairlearn
+aequitas
+mapie
+evidently
+python-constraint

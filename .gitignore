@@ -1,6 +1,8 @@
 Thesis.md
 coding_roadmap.md
 data/
+venv310/
+outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

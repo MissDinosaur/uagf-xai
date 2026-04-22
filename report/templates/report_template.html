@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UAGF-XAI Audit Report</title>
+</head>
+<body>
+
+<h1>AI Audit Report</h1>
+
+<p><b>Risk Level:</b> {{ risk_level }}</p>
+<p><b>Generated:</b> {{ timestamp }}</p>
+
+<hr>
+
+{% for key, value in results.items() %}
+
+<h2>{{ key }}</h2>
+
+<pre>{{ value }}</pre>
+
+{% if value.plot %}
+    <img src="../../{{ value.plot }}" width="500">
+{% endif %}
+
+<hr>
+
+{% endfor %}
+
+</body>
+</html>

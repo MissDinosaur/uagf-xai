@@ -6,7 +6,8 @@ shap
 lime
 dice-ml
 fairlearn
-aequitas
 mapie
 evidently
 python-constraint
+transformers
+torch

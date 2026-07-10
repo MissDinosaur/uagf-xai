@@ -19,4 +19,6 @@ def train_model():
     model = RandomForestRegressor()
     model.fit(X[:split], y[:split])
 
-    return model, X[split:], y[split:]
+    # Time-series regression domain — no demographic sensitive features defined
+    sensitive_features = []
+    return model, X[split:], y[split:], sensitive_features

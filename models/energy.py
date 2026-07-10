@@ -13,4 +13,6 @@ def train_model():
     model = RandomForestRegressor()
     model.fit(X_train, y_train)
 
-    return model, X_test, y_test
+    # Regression domain — no demographic sensitive features defined
+    sensitive_features = []
+    return model, X_test, y_test, sensitive_features

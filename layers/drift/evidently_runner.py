@@ -5,11 +5,16 @@ that highlight distribution shifts between reference and current datasets.
 """
 
 import os
-from evidently import Report
-from evidently.presets import DataDriftPreset
 
 
 def run_drift(X):
+    try:
+        from evidently import Report
+        from evidently.presets import DataDriftPreset
+    except ImportError as exc:
+        raise ImportError(
+            "Evidently is required to run drift analysis."
+        ) from exc
 
     os.makedirs("outputs/drift", exist_ok=True)
 
@@ -22,16 +27,27 @@ def run_drift(X):
     report = Report(metrics=[DataDriftPreset()])
     report.run(reference_data=reference_data, current_data=current_data)
 
-    items_callable = getattr(report, "items", None)
-    if callable(items_callable):
-        metrics_snapshot = [str(item) for item in items_callable()]
-    else:
-        metrics_snapshot = ["Drift detection completed"]
+    report_metric = None
+    if hasattr(report, "metrics") and report.metrics:
+        report_metric = report.metrics[0]
+
+    metric_dict = report_metric.dict() if report_metric is not None else {}
+    drift_share = metric_dict.get("drift_share")
+    drift_share = round(float(drift_share), 4) if drift_share is not None else None
+    features_analyzed = len(X.columns) if hasattr(X, "columns") else None
+    drifted_features = []
 
     result = {
         "type": "drift",
         "method": "Evidently",
-        "metrics": metrics_snapshot,
+        "drift_share": drift_share,
+        "features_analyzed": features_analyzed,
+        "drifted_features": drifted_features,
+        "note": (
+            "Current Evidently API exposes dataset-level drift_share via the "
+            "preset metric object; per-column drift details are not returned "
+            "by this version."
+        ),
     }
 
     return result

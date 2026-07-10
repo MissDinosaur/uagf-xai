@@ -14,4 +14,6 @@ def train_model():
     model = LogisticRegression()
     model.fit(X, labels)
 
-    return model, X, labels
+    # Text/NLP domain — sensitive feature columns are not defined in TF-IDF matrix
+    sensitive_features = []
+    return model, X, labels, sensitive_features

@@ -1,4 +1,8 @@
+Given the governance context, audit requirements, trained model, and evaluation dataset, determine the minimum sufficient evidence set and execute the corresponding evidence generation pipeline.
+
 # uagf-xai
+UAGF-XAI is the S6 evidence generation component of the UAGF platform. It provides a CBEP-driven toolkit that selects and generates minimum sufficient audit evidence for both traditional ML and LLM/agentic systems under selected EU AI Act requirements.
+
 UAGF-XAI is an automated AI audit evidence generator that integrates explainability, fairness, uncertainty and drift detection tools into a unified pipeline guided by a constraint-based evidence planner.
 
 The proposed system architecture integrates multiple AI auditing techniques into a unified pipeline. The system receives an AI model and its associated dataset as input. A Constraint-Based Evidence Planner (CBEP) determines which analytical methods should be executed depending on the AI system risk level.
@@ -135,6 +139,16 @@ main.py -> audit_api -> planner (CBEP) -> executor -> layers -> report
                                └─────────────────────────────────┘
 ```
 
+### Dataset
+| Case          | Domain         | System         |
+| ------------- | -------------- | -------------- |
+| German Credit | Finance        | Traditional ML |
+| Energy        | Energy         | Traditional ML |
+| M5            | Retail         | Traditional ML |
+| IMDb          | NLP Classifier | Traditional ML |
+| GPT2/Mistral  | LLM            | LLM            |
+
+
 ### Planner Workflow
 ```text
                  ┌──────────────────────────┐
@@ -256,3 +270,4 @@ main.py -> audit_api -> planner (CBEP) -> executor -> layers -> report
         python main.py --system-type llm --risk-level high --llm-model gpt2
 - Agentic run:
         python main.py --system-type agentic --risk-level limited --llm-model gpt2
+

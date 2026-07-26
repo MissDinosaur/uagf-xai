@@ -5,6 +5,19 @@ For the LegalMindD LLM/agentic validation case, the S5 artifact provided in the 
 # uagf-xai
 UAGF-XAI is the S6 evidence generation component of the UAGF platform. It provides a CBEP-driven toolkit that selects and generates minimum sufficient audit evidence for both traditional ML and LLM/agentic systems under selected EU AI Act requirements.
 
+## Report generation
+
+- HTML audit reports are generated under `outputs/report/`.
+- PDF reports are generated automatically from the HTML report using Playwright.
+- Install the Python dependencies, then install Chromium once with:
+
+  ```bash
+  python -m playwright install chromium
+  ```
+
+- Use `--no-pdf` to generate HTML without running the optional PDF export step.
+- If Playwright or Chromium is unavailable, HTML generation still succeeds and the CLI prints explicit installation guidance.
+
 UAGF-XAI is an automated AI audit evidence generator that integrates explainability, fairness, uncertainty and drift detection tools into a unified pipeline guided by a constraint-based evidence planner.
 
 The proposed system architecture integrates multiple AI auditing techniques into a unified pipeline. The system receives an AI model and its associated dataset as input. A Constraint-Based Evidence Planner (CBEP) determines which analytical methods should be executed depending on the AI system risk level.
@@ -132,7 +145,7 @@ main.py -> audit_api -> planner (CBEP) -> executor -> layers -> report
                                                  ▼
                                ┌─────────────────────────────────┐
                                │ Report Generator                │
-                               │ HTML report output              │
+                               │ HTML and PDF report output      │
                                └─────────────────┬───────────────┘
                                                  │
                                                  ▼

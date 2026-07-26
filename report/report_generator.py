@@ -2,8 +2,10 @@ import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import os
 from datetime import datetime
+from pathlib import Path
 from output_naming import build_output_path
 from report.report_builder import build_report_model
+from report.pdf_exporter import PDFExportError, export_html_to_pdf
 from layers.llm.evidence_methods import (
     LLM_METHOD_ORDER,
     llm_method_display_name,
@@ -72,6 +74,7 @@ def generate_report(
     audit_context=None,
     governance_context=None,
     resource_context=None,
+    generate_pdf=True,
 ):
 
     env = Environment(
@@ -111,10 +114,15 @@ def generate_report(
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    return output_path
+    print("HTML report generated at:", output_path)
+    if generate_pdf:
+        pdf_path = str(Path(output_path).with_suffix(".pdf"))
+        try:
+            resolved_pdf_path = export_html_to_pdf(output_path, pdf_path)
+            print("PDF report generated at:", resolved_pdf_path)
+        except PDFExportError as exc:
+            print(f"[ReportGenerator] PDF generation warning:\n{exc}")
+    else:
+        print("[ReportGenerator] PDF generation skipped by --no-pdf.")
 
-"""
-pip install pdfkit
-import pdfkit
-pdfkit.from_file("outputs/report/<case>_audit_report.html", "outputs/report/<case>_audit_report.pdf")
-"""
+    return output_path

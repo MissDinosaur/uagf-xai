@@ -664,9 +664,6 @@ def build_limitations(results, audit_context, resource_summary, applicability):
     for row in applicability.get("rows", []):
         if row["status"]["status"] == "not_executed":
             limitations.append(f"{row['method']}: {row['reason']}")
-    limitations.append(
-        "PDF export is not implemented in the current report pipeline; the authoritative output is HTML."
-    )
     return list(dict.fromkeys(str(item) for item in limitations if item))
 
 

@@ -12,3 +12,4 @@ scipy
 python-constraint
 transformers
 torch
+playwright

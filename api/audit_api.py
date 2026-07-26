@@ -118,6 +118,7 @@ def audit_with_detailed_data(
     governance_context=None,
     sensitive_features=None,
     resource_bundle=None,
+    generate_pdf=True,
 ):
     """
     Run the evidence pipeline against explicitly supplied model/data inputs.
@@ -164,7 +165,7 @@ def audit_with_detailed_data(
         task_type=audit_context.task_type,
     )
 
-    report_path = generate_report(
+    generate_report(
         results,
         audit_context.risk_tier,
         provider_name=provider_name,
@@ -172,13 +173,13 @@ def audit_with_detailed_data(
         audit_context=audit_context,
         governance_context=governance_context,
         resource_context=resource_context,
+        generate_pdf=generate_pdf,
     )
-    print("Report generated at:", report_path)
 
     return results
 
 
-def audit(audit_context, governance_context=None):
+def audit(audit_context, governance_context=None, generate_pdf=True):
     """
     Run the S5-driven workflow.
 
@@ -196,4 +197,5 @@ def audit(audit_context, governance_context=None):
         governance_context=governance_context,
         sensitive_features=sensitive_features,
         resource_bundle=resource_bundle,
+        generate_pdf=generate_pdf,
     )

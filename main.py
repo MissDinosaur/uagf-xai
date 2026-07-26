@@ -9,7 +9,8 @@ Two execution paths are supported:
 
 2. S5-driven mode
    - omit --system-type
-   - loads audit metadata from the S5 JSON and resolves resources from it
+   - loads audit metadata from the GovernanceContext JSON and AuditContext JSON 
+     and resolves resources from them
 """
 
 from __future__ import annotations
@@ -51,6 +52,11 @@ def parse_args():
         default=None,
         metavar="FILE",
         help="Path to S5 audit JSON file",
+    )
+    parser.add_argument(
+        "--no-pdf",
+        action="store_true",
+        help="Generate the HTML report only and skip automatic PDF export.",
     )
     return parser.parse_args()
 
@@ -138,6 +144,7 @@ def main():
             audit_context=audit_context,
             governance_context=governance_context,
             sensitive_features=sensitive_features,
+            generate_pdf=not args.no_pdf,
         )
     else:
         if not args.s5_json:
@@ -152,7 +159,11 @@ def main():
         print(f"Target column: {audit_context.target_column}")
         print(f"Model artifact URI: {audit_context.model_artifact_uri}")
 
-        results = audit(audit_context, governance_context)
+        results = audit(
+            audit_context,
+            governance_context,
+            generate_pdf=not args.no_pdf,
+        )
 
     print("\nFinal Results:")
     print(results)
@@ -173,6 +184,6 @@ python main.py --system-type llm --llm-model gpt2
 
 # S5-driven mode with governance and audit JSON files
 python main.py \\
-    --s4-json data/03_harbourlogistik_gmbh/s4_governance_context.json \\
-    --s5-json data/03_harbourlogistik_gmbh/s5_audit_context.json
+    --s4-json data/03_harbourlogistik_gmbh/s4_harbourlogistik-harboursense-001.json \\
+    --s5-json data/03_harbourlogistik_gmbh/s5_harbourlogistik_gmbh_audit_state.json
 """

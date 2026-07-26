@@ -44,6 +44,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from layers.llm.evidence_methods import (
+    LLM_GROUNDING,
+    LLM_METHOD_ORDER,
+    LLM_PROMPT_FAIRNESS,
+    LLM_SELF_CONSISTENCY,
+    LLM_SEMANTIC_DRIFT,
+    llm_method_display_name,
+)
+
 if TYPE_CHECKING:
     from adapters.s4_governance_adapter import GovernanceContext
     from adapters.s5_audit_adapter import AuditContext
@@ -63,21 +72,21 @@ _S5_ARTICLE_TRAD: dict[str, list[str]] = {
 }
 
 _S5_ARTICLE_LLM: dict[str, list[str]] = {
-    "Art9":  ["llm_uncertainty"],
-    "Art10": ["llm_fairness"],
-    "Art13": ["llm_explainability"],
-    "Art14": ["llm_uncertainty"],
-    "Art15": ["llm_uncertainty", "llm_drift"],
-    "Art61": ["llm_drift"],
+    "Art9":  [LLM_SELF_CONSISTENCY],
+    "Art10": [LLM_PROMPT_FAIRNESS],
+    "Art13": [LLM_GROUNDING],
+    "Art14": [LLM_SELF_CONSISTENCY],
+    "Art15": [LLM_SELF_CONSISTENCY, LLM_SEMANTIC_DRIFT],
+    "Art61": [LLM_SEMANTIC_DRIFT],
 }
 
 _ALL_TRAD = ["shap", "lime", "fairness", "uncertainty", "drift", "dice"]
-_ALL_LLM  = ["llm_explainability", "llm_fairness", "llm_uncertainty", "llm_drift"]
+_ALL_LLM = LLM_METHOD_ORDER
 
 _EXPLAINABILITY_TRAD = ["shap", "lime", "dice"]
-_EXPLAINABILITY_LLM  = ["llm_explainability"]
+_EXPLAINABILITY_LLM  = [LLM_GROUNDING]
 _DRIFT_TRAD          = ["drift"]
-_DRIFT_LLM           = ["llm_drift"]
+_DRIFT_LLM           = [LLM_SEMANTIC_DRIFT]
 
 METHOD_TASK_COMPATIBILITY: dict[str, set[str]] = {
     "shap": {
@@ -161,10 +170,9 @@ def _get_domain_score(
 def _base_plan(risk_tier: str, is_llm: bool) -> list[str]:
     if is_llm:
         return {
-            "minimal": ["llm_explainability"],
-            "limited": ["llm_explainability", "llm_fairness"],
-            "high":    ["llm_explainability", "llm_fairness",
-                        "llm_uncertainty", "llm_drift"],
+            "minimal": [LLM_GROUNDING],
+            "limited": [LLM_GROUNDING, LLM_PROMPT_FAIRNESS],
+            "high": list(LLM_METHOD_ORDER),
         }.get(risk_tier, [])
     return {
         "minimal": ["shap"],
@@ -229,7 +237,10 @@ def plan_evidence(
     -------
     (methods, trace)
     """
-    is_llm = audit.system_type == "llm"
+    is_llm = str(getattr(audit, "system_type", "")).strip().lower() in {
+        "llm",
+        "agentic",
+    }
     task_type = _normalize_task_type(getattr(audit, "task_type", ""))
 
     # Step 1: base plan
@@ -342,6 +353,9 @@ def plan_evidence(
         "governance_context":      gov_trace,
         "task_compatibility_assessment": task_compatibility_trace,
         "final_plan":              methods,
+        "final_plan_display_names": [
+            llm_method_display_name(method) for method in methods
+        ] if is_llm else methods,
     }
 
     return methods, trace

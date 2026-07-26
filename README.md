@@ -1,5 +1,7 @@
 Given the governance context, audit requirements, trained model, and evaluation dataset, determine the minimum sufficient evidence set and execute the corresponding evidence generation pipeline.
 
+For the LegalMindD LLM/agentic validation case, the S5 artifact provided in the repository contains model configuration and adapter metadata but no loadable local model weights. Therefore, UAGF-XAI validates the LLM golden-set resource contract and metadata loading pathway, while execution-level LLM evidence generation is reported as skipped. A complete local HuggingFace model artifact would be required to run full LLM-E1 to LLM-E4 evidence generation.
+
 # uagf-xai
 UAGF-XAI is the S6 evidence generation component of the UAGF platform. It provides a CBEP-driven toolkit that selects and generates minimum sufficient audit evidence for both traditional ML and LLM/agentic systems under selected EU AI Act requirements.
 

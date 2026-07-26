@@ -6,6 +6,9 @@ Computes vocabulary divergence between reference and current prompt sets.
 from collections import Counter
 import math
 
+from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
+from .evidence_methods import LLM_E3_SEMANTIC_DRIFT_INDEX
+
 
 def _token_distribution(texts):
     token_counts = Counter()
@@ -43,7 +46,14 @@ def _js_divergence(p_dist, q_dist):
     return 0.5 * _kl(p_dist, m) + 0.5 * _kl(q_dist, m)
 
 
-def run_llm_drift(llm_payload):
+def run_llm_drift(generator, llm_payload, resource_context=None):
+    if not llm_execution_is_loadable(generator, resource_context):
+        return build_llm_skip_result(
+            LLM_E3_SEMANTIC_DRIFT_INDEX,
+            generator=generator,
+            resource_context=resource_context,
+        )
+
     reference_prompts = llm_payload.get("reference_prompts", [])
     current_prompts = llm_payload.get("current_prompts", [])
 
@@ -53,7 +63,8 @@ def run_llm_drift(llm_payload):
 
     return {
         "type": "llm_drift",
-        "method": "Prompt Vocabulary JS Divergence",
+        "method": LLM_E3_SEMANTIC_DRIFT_INDEX,
+        "status": "completed",
         "reference_prompt_count": len(reference_prompts),
         "current_prompt_count": len(current_prompts),
         "js_divergence": js_score,

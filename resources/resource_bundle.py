@@ -5,7 +5,7 @@ This module defines a unified container for all resources
 required by the UAGF-XAI evidence generation pipeline.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
@@ -31,9 +31,11 @@ class ResourceBundle:
 
     model: Any
 
-    training_dataset: pd.DataFrame
+    model_metadata: dict[str, Any] = field(default_factory=dict)
 
-    evaluation_dataset: pd.DataFrame
+    training_dataset: pd.DataFrame | None = None
+
+    evaluation_dataset: pd.DataFrame | None = None
 
     # ---------- LLM ----------
 
@@ -43,4 +45,10 @@ class ResourceBundle:
 
     prompt_template: str | None = None
 
-    golden_dataset: pd.DataFrame | None = None
+    golden_dataset: Any | None = None
+
+    system_prompt: str | None = None
+
+    rag_manifest: Any | None = None
+
+    guardrail_config: Any | None = None

@@ -3,8 +3,18 @@ LLM explainability evidence runner.
 Builds prompt-response traces and lightweight token statistics.
 """
 
+from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
+from .evidence_methods import LLM_E1_GROUNDING_SCORE
 
-def run_llm_explainability(generator, llm_payload):
+
+def run_llm_explainability(generator, llm_payload, resource_context=None):
+    if not llm_execution_is_loadable(generator, resource_context):
+        return build_llm_skip_result(
+            LLM_E1_GROUNDING_SCORE,
+            generator=generator,
+            resource_context=resource_context,
+        )
+
     prompts = llm_payload.get("current_prompts", [])
     max_prompts = min(3, len(prompts))
 
@@ -32,7 +42,8 @@ def run_llm_explainability(generator, llm_payload):
 
     return {
         "type": "llm_explainability",
-        "method": "Prompt-Response Trace",
+        "method": LLM_E1_GROUNDING_SCORE,
+        "status": "completed",
         "sample_count": len(traces),
         "traces": traces,
     }

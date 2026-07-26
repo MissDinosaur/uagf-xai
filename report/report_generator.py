@@ -1,8 +1,13 @@
 import json
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 import os
 from datetime import datetime
 from output_naming import build_output_path
+from report.report_builder import build_report_model
+from layers.llm.evidence_methods import (
+    LLM_METHOD_ORDER,
+    llm_method_display_name,
+)
 
 
 def _to_json_pretty(value):
@@ -13,6 +18,8 @@ def _to_json_pretty(value):
 def _section_label(key: str) -> str:
     if key == "_cbep_trace":
         return "CBEP planning trace"
+    if key in LLM_METHOD_ORDER:
+        return llm_method_display_name(key)
 
     pretty = key.replace("_", " ").strip()
     if not pretty:
@@ -25,14 +32,12 @@ def _ordered_report_sections(results):
     preferred_order = [
         "_cbep_trace",
         "explainability",
+        "lime",
         "fairness",
         "uncertainty",
         "drift",
         "counterfactual",
-        "llm_explainability",
-        "llm_fairness",
-        "llm_uncertainty",
-        "llm_drift",
+        *LLM_METHOD_ORDER,
     ]
 
     ordered = []
@@ -59,32 +64,40 @@ def _ordered_report_sections(results):
     return ordered
 
 
-def _extract_cbep_final_plan(results):
-    trace = results.get("_cbep_trace")
-    if isinstance(trace, dict):
-        final_plan = trace.get("final_plan")
-        if isinstance(final_plan, list):
-            return final_plan
-    return []
+def generate_report(
+    results,
+    risk_level,
+    provider_name=None,
+    output_namespace="audit",
+    audit_context=None,
+    governance_context=None,
+    resource_context=None,
+):
 
-
-def generate_report(results, risk_level, provider_name=None, output_namespace="audit"):
-
-    env = Environment(loader=FileSystemLoader("report/templates"))
+    env = Environment(
+        loader=FileSystemLoader("report/templates"),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
     env.filters["tojson_pretty"] = _to_json_pretty
     template = env.get_template("report_template.html")
 
     os.makedirs("outputs/report", exist_ok=True)
 
     case_name = provider_name or output_namespace or "audit"
-    cbep_final_tools = _extract_cbep_final_plan(results)
+    report_model = build_report_model(
+        results=results,
+        audit_context=audit_context,
+        governance_context=governance_context,
+        resource_context=resource_context,
+        provider_name=case_name,
+    )
 
     html_content = template.render(
         sections=_ordered_report_sections(results),
         risk_level=risk_level,
         timestamp=str(datetime.now()),
         provider_name=case_name,
-        cbep_final_tools=cbep_final_tools,
+        report=report_model,
     )
 
     output_path = build_output_path(
@@ -95,7 +108,7 @@ def generate_report(results, risk_level, provider_name=None, output_namespace="a
         fallback=output_namespace,
     )
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
     return output_path

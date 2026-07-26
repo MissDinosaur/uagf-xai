@@ -2,97 +2,246 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-<title>UAGF-XAI Audit Report — {{ provider_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UAGF-XAI Audit Report — {{ provider_name }}</title>
   <style>
+    :root {
+      --ink: #172033;
+      --muted: #5d687a;
+      --line: #dce2ea;
+      --panel: #ffffff;
+      --page: #f3f6fa;
+      --navy: #183153;
+      --blue: #2f5fa7;
+      --green: #18794e;
+      --green-bg: #e9f7ef;
+      --amber: #9a6700;
+      --amber-bg: #fff6d8;
+      --red: #b42318;
+      --red-bg: #ffebe9;
+      --grey-bg: #eef1f5;
+    }
+    * { box-sizing: border-box; }
     body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
       font-family: "Segoe UI", Arial, sans-serif;
-      max-width: 960px;
-      margin: 40px auto;
-      padding: 0 24px;
-      color: #1a1a2e;
-      background: #f5f7fa;
-    }
-    h1 { font-size: 2rem; border-bottom: 3px solid #4361ee; padding-bottom: 8px; }
-    .meta { background: #fff; border-radius: 8px; padding: 14px 20px;
-            margin-bottom: 24px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
-    .meta p { margin: 4px 0; }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      margin-bottom: 24px;
-      box-shadow: 0 2px 6px rgba(0,0,0,.08);
-      overflow: hidden;
-    }
-    .section-header {
-      background: #4361ee;
-      color: #fff;
-      padding: 10px 20px;
-      font-size: 1.1rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-    }
-    .section-body { padding: 16px 20px; }
-    .badge {
-      display: inline-block;
-      background: #e0e7ff;
-      color: #4361ee;
-      border-radius: 4px;
-      padding: 2px 10px;
-      font-size: .85rem;
-      margin-bottom: 12px;
-    }
-    pre.json-block {
-      background: #1e1e2e;
-      color: #cdd6f4;
-      border-radius: 6px;
-      padding: 16px;
-      overflow-x: auto;
-      overflow-y: auto;
-      max-height: 320px;
-      font-size: .82rem;
       line-height: 1.55;
-      white-space: pre;
-      tab-size: 2;
     }
-    img.plot { margin-top: 12px; max-width: 100%; border-radius: 6px; border: 1px solid #e2e8f0; }
-    .key-val { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px;
-               font-size: .9rem; margin-bottom: 12px; }
-    .key-val dt { font-weight: 600; color: #64748b; }
-    .key-val dd { margin: 0; }
+    .report-shell { max-width: 1160px; margin: 0 auto; padding: 36px 24px 64px; }
+    .report-header {
+      color: #fff;
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      border-radius: 12px;
+      padding: 30px 34px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 24px rgba(24, 49, 83, .18);
+    }
+    .report-header h1 { margin: 0 0 6px; font-size: 2rem; }
+    .report-header p { margin: 3px 0; color: #e5edf8; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; font-weight: 700; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px 26px;
+      margin-bottom: 22px;
+      box-shadow: 0 3px 12px rgba(23, 32, 51, .05);
+    }
+    h2 { color: var(--navy); font-size: 1.35rem; margin: 0 0 16px; }
+    h3 { color: var(--navy); font-size: 1.06rem; margin: 0 0 10px; }
+    p { margin: 8px 0 12px; }
+    .lead { font-size: 1.02rem; color: #2c394d; }
+    .status-badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: .76rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .status-completed { color: var(--green); background: var(--green-bg); }
+    .status-skipped, .status-limited, .status-partial { color: var(--amber); background: var(--amber-bg); }
+    .status-failed { color: var(--red); background: var(--red-bg); }
+    .status-not-applicable, .status-not-selected, .status-not-executed,
+    .status-not-available { color: #4b5565; background: var(--grey-bg); }
+    .facts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .fact { border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; background: #fbfcfe; }
+    .fact-label { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
+    .fact-value { display: block; margin-top: 3px; font-weight: 600; overflow-wrap: anywhere; }
+    .callout { border-left: 4px solid var(--blue); background: #eef5ff; padding: 12px 15px; border-radius: 5px; margin: 12px 0; }
+    .callout.success { border-color: var(--green); background: var(--green-bg); }
+    .callout.warning { border-color: var(--amber); background: var(--amber-bg); }
+    .callout.danger { border-color: var(--red); background: var(--red-bg); }
+    .table-wrap { overflow-x: auto; margin: 12px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+    th { background: #eaf0f8; color: var(--navy); text-align: left; font-weight: 700; }
+    th, td { border: 1px solid var(--line); padding: 9px 10px; vertical-align: top; }
+    tbody tr:nth-child(even) { background: #fafbfd; }
+    .evidence-card { border: 1px solid var(--line); border-radius: 9px; margin: 14px 0; overflow: hidden; }
+    .evidence-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #f7f9fc;
+      border-bottom: 1px solid var(--line);
+      padding: 13px 16px;
+    }
+    .evidence-card-body { padding: 15px 16px; }
+    .method-meta { color: var(--muted); font-size: .84rem; }
+    .plot { display: block; max-width: 100%; margin: 14px auto; border: 1px solid var(--line); border-radius: 7px; }
+    .limitations { margin: 8px 0 0; padding-left: 21px; }
+    .limitations li { margin: 6px 0; }
+    details { border: 1px solid var(--line); border-radius: 7px; margin: 10px 0; background: #fbfcfe; }
+    summary { cursor: pointer; padding: 12px 14px; font-weight: 650; color: var(--navy); }
+    pre {
+      margin: 0;
+      padding: 16px;
+      max-height: 480px;
+      overflow: auto;
+      background: #172033;
+      color: #e5edf8;
+      font-size: .78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .footer { color: var(--muted); text-align: center; font-size: .8rem; margin-top: 26px; }
+    @media print {
+      body { background: #fff; }
+      .report-shell { max-width: none; padding: 0; }
+      section, .report-header { box-shadow: none; break-inside: avoid; }
+      details { break-inside: avoid; }
+      details > * { display: block; }
+    }
   </style>
 </head>
 <body>
+<main class="report-shell">
+  <header class="report-header">
+    <div class="eyebrow">Unified AI Governance Framework · S6 Evidence Report</div>
+    <h1>UAGF-XAI Audit Report</h1>
+    <p><strong>Audit case:</strong> {{ provider_name }}</p>
+    <p><strong>Generated:</strong> {{ timestamp }}</p>
+  </header>
 
-<h1>AI Audit Report</h1>
+  <section id="executive-summary">
+    <h2>1. Executive Summary</h2>
+    <p><span class="status-badge {{ report.executive_summary.overall_status.css_class }}">{{ report.executive_summary.overall_status.label }}</span></p>
+    {% for paragraph in report.executive_summary.paragraphs %}<p class="lead">{{ paragraph }}</p>{% endfor %}
+    <div class="facts-grid">
+      {% for fact in report.executive_summary.facts %}
+      <div class="fact"><span class="fact-label">{{ fact.label }}</span><span class="fact-value">{{ fact.value }}</span></div>
+      {% endfor %}
+    </div>
+  </section>
 
-<div class="meta">
-  <p><b>Audit Case:</b> {{ provider_name }}</p>
-  <p><b>Risk Level:</b> {{ risk_level }}</p>
-  <p><b>CBEP Selected Tools:</b> {{ cbep_final_tools | join(", ") if cbep_final_tools else "None" }}</p>
-  <p><b>Generated:</b> {{ timestamp }}</p>
-</div>
-
-{% for section in sections %}
-<div class="section">
-  <div class="section-header">{{ section.label }}</div>
-  <div class="section-body">
-
-    {% if section.value.method is defined %}
-      <span class="badge">{{ section.value.method }}</span>
+  <section id="audit-scope">
+    <h2>2. Audit Scope and Input Context</h2>
+    <div class="callout"><strong>Resource contract:</strong> {{ report.audit_scope.contract_name }}</div>
+    <div class="facts-grid">
+      {% for row in report.audit_scope.common_rows %}
+      <div class="fact"><span class="fact-label">{{ row.label }}</span><span class="fact-value">{{ row.value }}</span></div>
+      {% endfor %}
+    </div>
+    <h3>Contract-specific inputs</h3>
+    <div class="table-wrap"><table><tbody>
+      {% for row in report.audit_scope.contract_rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if report.audit_scope.domain_scores %}
+    <h3>S4 governance domain scores</h3>
+    <div class="table-wrap"><table><thead><tr><th>Governance domain</th><th>Score</th></tr></thead><tbody>
+      {% for row in report.audit_scope.domain_scores %}<tr><td>{{ row.domain }}</td><td>{{ row.score }}</td></tr>{% endfor %}
+    </tbody></table></div>
     {% endif %}
+  </section>
 
-    {# --- SHAP / explainability image --- #}
-    {% if section.value.plot is defined %}
-      <img class="plot" src="../../{{ section.value.plot }}" alt="SHAP summary plot">
-    {% endif %}
+  <section id="resource-loading">
+    <h2>3. Resource Loading Summary</h2>
+    <p><span class="status-badge {{ report.resource_summary.status.css_class }}">{{ report.resource_summary.status.label }}</span></p>
+    <p>{{ report.resource_summary.narrative }}</p>
+    <div class="table-wrap"><table><tbody>
+      {% for row in report.resource_summary.rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% for warning in report.resource_summary.warnings %}<div class="callout warning"><strong>Resource limitation:</strong> {{ warning }}</div>{% endfor %}
+  </section>
 
-    {# --- Render the full evidence dict as indented JSON --- #}
-    <pre class="json-block">{{ section.value | tojson_pretty }}</pre>
+  <section id="cbep-planning">
+    <h2>4. CBEP Evidence Planning Summary</h2>
+    <p>CBEP selects a minimum sufficient evidence set from risk tier, applicable EU AI Act articles, governance priorities, CSP state, and task-method compatibility.</p>
+    {% if report.cbep_summary.governance_adjustments %}<div class="callout"><strong>Governance adjustments:</strong> {{ report.cbep_summary.governance_adjustments | join("; ") }}</div>{% endif %}
+    {% if report.cbep_summary.csp_adjustments %}<div class="callout warning"><strong>CSP planning note:</strong> {{ report.cbep_summary.csp_adjustments | join("; ") }}</div>{% endif %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Candidate Method</th><th>Layer</th><th>Article Mapping</th><th>Selected</th><th>Reason</th></tr></thead>
+      <tbody>{% for row in report.cbep_summary.rows %}<tr><td>{{ row.method }}</td><td>{{ row.layer }}</td><td>{{ row.articles }}</td><td>{{ row.selected }}</td><td>{{ row.reason }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
 
-  </div>
-</div>
-{% endfor %}
+  <section id="coverage-matrix">
+    <h2>5. Evidence Coverage Matrix</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Evidence Layer</th><th>Method</th><th>Status</th><th>EU AI Act Article</th><th>Main Output</th><th>Limitation</th></tr></thead>
+      <tbody>{% for row in report.coverage_matrix %}<tr><td>{{ row.layer }}</td><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.articles }}</td><td>{{ row.main_output }}</td><td>{{ row.limitation }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
 
+  <section id="evidence-findings">
+    <h2>6. Evidence Findings by Layer</h2>
+    {% if not report.evidence_findings %}<div class="callout warning">No executable evidence findings were returned.</div>{% endif %}
+    {% for finding in report.evidence_findings %}
+    <article class="evidence-card">
+      <div class="evidence-card-header">
+        <div><h3>{{ finding.method }}</h3><div class="method-meta">{{ finding.layer }} · {{ finding.articles }}</div></div>
+        <span class="status-badge {{ finding.status.css_class }}">{{ finding.status.label }}</span>
+      </div>
+      <div class="evidence-card-body">
+        <p>{{ finding.narrative }}</p>
+        {% if finding.key_findings %}<ul>{% for item in finding.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+        {% if finding.metrics %}<div class="facts-grid">{% for metric in finding.metrics %}<div class="fact"><span class="fact-label">{{ metric.label }}</span><span class="fact-value">{{ metric.value }}</span></div>{% endfor %}</div>{% endif %}
+        {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
+        {% if finding.plot %}<img class="plot" src="../../{{ finding.plot }}" alt="{{ finding.method }} evidence visualization">{% endif %}
+        {% if finding.output %}<p><a href="../../{{ finding.output }}">Open generated {{ finding.method }} artifact</a></p>{% endif %}
+        {% for limitation in finding.limitations %}<div class="callout warning"><strong>Interpretation limitation:</strong> {{ limitation }}</div>{% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section id="method-applicability">
+    <h2>7. Method Applicability and Skipped Evidence</h2>
+    <p>{{ report.applicability.intro }}</p>
+    {% if report.applicability.rows %}
+    <div class="table-wrap"><table><thead><tr><th>Method</th><th>CBEP Selected</th><th>Status</th><th>Reason</th></tr></thead><tbody>
+      {% for row in report.applicability.rows %}<tr><td>{{ row.method }}</td><td>{{ row.selected }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.reason }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="callout success">All CBEP-selected evidence methods completed.</div>{% endif %}
+  </section>
+
+  <section id="limitations">
+    <h2>8. Limitations</h2>
+    <div class="callout warning">The following limitations are reported explicitly and should be considered when using this evidence for audit conclusions.</div>
+    <ul class="limitations">{% for limitation in report.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+  </section>
+
+  <section id="raw-evidence">
+    <h2>9. Raw Evidence Appendix</h2>
+    <p>The complete machine-readable evidence is preserved below for reproducibility and audit traceability.</p>
+    {% for section in sections %}
+    <details>
+      <summary>Raw {{ section.label }} JSON</summary>
+      <pre>{{ section.value | tojson_pretty }}</pre>
+    </details>
+    {% endfor %}
+  </section>
+
+  <div class="footer">Generated by UAGF-XAI · HTML is the authoritative report format for this implementation.</div>
+</main>
 </body>
 </html>

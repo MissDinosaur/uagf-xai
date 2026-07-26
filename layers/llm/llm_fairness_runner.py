@@ -3,6 +3,9 @@ LLM fairness evidence runner.
 Compares response length and lexical polarity across prompt groups.
 """
 
+from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
+from .evidence_methods import LLM_E4_DIFFERENTIAL_PROMPT_FAIRNESS
+
 POSITIVE_WORDS = {
     "good",
     "great",
@@ -25,7 +28,14 @@ def _polarity_score(text):
     return pos_hits - neg_hits
 
 
-def run_llm_fairness(generator, llm_payload):
+def run_llm_fairness(generator, llm_payload, resource_context=None):
+    if not llm_execution_is_loadable(generator, resource_context):
+        return build_llm_skip_result(
+            LLM_E4_DIFFERENTIAL_PROMPT_FAIRNESS,
+            generator=generator,
+            resource_context=resource_context,
+        )
+
     fairness_pairs = llm_payload.get("fairness_pairs", [])
     pair_results = []
 
@@ -76,7 +86,8 @@ def run_llm_fairness(generator, llm_payload):
 
     return {
         "type": "llm_fairness",
-        "method": "Pairwise Prompt Audit",
+        "method": LLM_E4_DIFFERENTIAL_PROMPT_FAIRNESS,
+        "status": "completed",
         "pair_count": len(pair_results),
         "max_polarity_gap": max_polarity_gap,
         "pairs": pair_results,

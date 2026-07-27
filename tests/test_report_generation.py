@@ -5,6 +5,7 @@ from pathlib import Path
 from adapters.s5_audit_adapter import AuditContext
 from layers.llm.evidence_methods import LLM_METHOD_ORDER, llm_method_display_name
 from report import report_generator
+from report.method_titles import report_method_title
 from schema.evidence_schema import not_applicable_evidence, skipped_evidence
 
 
@@ -53,15 +54,20 @@ def test_html_report_contains_professional_sections_and_raw_evidence(
     assert returned == str(output)
     for heading in (
         "Executive Summary",
+        "Runtime and Reproducibility Information",
+        "Python version",
+        "Runtime per method",
+        "Output Artifacts Generated",
         "CBEP Evidence Planning Summary",
         "Evidence Coverage Matrix",
         "Evidence Findings by Layer",
-        "Limitations",
         "Raw Evidence Appendix",
     ):
         assert heading in html
     assert "raw-marker" in html
     assert "status-completed" in html
+    assert "<h3>Package versions</h3>" not in html
+    assert '<section id="limitations">' not in html
 
 
 def test_report_renders_skipped_and_not_applicable_statuses(
@@ -130,7 +136,52 @@ def test_llm_report_uses_professor_defined_method_names(tmp_path, monkeypatch, g
     html = output.read_text(encoding="utf-8")
 
     for token in LLM_METHOD_ORDER:
-        assert llm_method_display_name(token) in html
+        assert report_method_title(token) in html
+
+
+def test_llm_metadata_only_report_uses_explicit_resource_badge(
+    tmp_path, monkeypatch, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    audit_context = AuditContext(
+        system_type="agentic",
+        modality="text",
+        application_domain="justice",
+        risk_tier="high",
+        task_type="llm_generation",
+        provider_name="LLM Provider",
+        golden_set_uri="file://golden.json",
+    )
+    results = {"_cbep_trace": _trace(LLM_METHOD_ORDER)}
+    for index, token in enumerate(LLM_METHOD_ORDER, 1):
+        results[token] = skipped_evidence(
+            evidence_id=f"LLM-E{index}",
+            layer=f"llm_layer_{index}",
+            method=llm_method_display_name(token),
+            summary="Metadata-only test result.",
+            limitations=["No model weights."],
+        )
+
+    report_generator.generate_report(
+        results,
+        "high",
+        audit_context=audit_context,
+        governance_context=governance_context,
+        resource_context={
+            "model_status": "metadata_only",
+            "model_is_loadable": False,
+            "golden_set": [{"prompt": "test"}],
+            "golden_set_loaded": True,
+        },
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "status-metadata-only" in html
+    assert "Metadata-only" in html
+    assert "Golden-set records" in html
+    assert ">1<" in html
+    assert "agentic LLM system in the justice domain" in html
 
 
 def test_generate_report_skips_pdf_export_when_disabled(

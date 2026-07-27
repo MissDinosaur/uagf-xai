@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from planner.cbep import plan_evidence
 from pipeline.executor import execute
 from report.report_generator import generate_report
@@ -101,13 +103,48 @@ def _build_resource_context(audit_context, resource_bundle):
         "training_dataset_loaded": (
             getattr(resource_bundle, "training_dataset", None) is not None
         ),
+        "training_dataset_rows": _safe_record_count(
+            getattr(resource_bundle, "training_dataset", None)
+        ),
         "evaluation_dataset_loaded": (
             getattr(resource_bundle, "evaluation_dataset", None) is not None
+        ),
+        "evaluation_dataset_rows": _safe_record_count(
+            getattr(resource_bundle, "evaluation_dataset", None)
         ),
         "golden_set_loaded": (
             getattr(resource_bundle, "golden_dataset", None) is not None
         ),
+        "golden_set_records": _safe_record_count(
+            getattr(resource_bundle, "golden_dataset", None)
+        ),
     }
+
+
+def _safe_record_count(value):
+    """Return a resource row count when it can be determined safely."""
+    if value is None or isinstance(value, (str, bytes)):
+        return None
+    if hasattr(value, "shape"):
+        try:
+            return int(value.shape[0])
+        except (IndexError, TypeError, ValueError):
+            pass
+    if isinstance(value, dict):
+        for key in ("golden_set", "records", "items", "data", "examples"):
+            candidate = value.get(key)
+            if isinstance(candidate, (list, tuple)):
+                return len(candidate)
+        candidate_lengths = [
+            len(candidate)
+            for candidate in value.values()
+            if isinstance(candidate, (list, tuple))
+        ]
+        return max(candidate_lengths) if candidate_lengths else None
+    try:
+        return len(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def audit_with_detailed_data(
@@ -119,10 +156,12 @@ def audit_with_detailed_data(
     sensitive_features=None,
     resource_bundle=None,
     generate_pdf=True,
+    run_started_at=None,
 ):
     """
     Run the evidence pipeline against explicitly supplied model/data inputs.
     """
+    pipeline_started_at = run_started_at or time.perf_counter()
     methods, cbep_trace = plan_evidence(audit_context, governance_context)
     print("Selected modules:", methods)
     provider_name = getattr(audit_context, "provider_name", None)
@@ -165,6 +204,8 @@ def audit_with_detailed_data(
         task_type=audit_context.task_type,
     )
 
+    total_runtime_seconds = time.perf_counter() - pipeline_started_at
+
     generate_report(
         results,
         audit_context.risk_tier,
@@ -174,6 +215,13 @@ def audit_with_detailed_data(
         governance_context=governance_context,
         resource_context=resource_context,
         generate_pdf=generate_pdf,
+        runtime_context={
+            "total_runtime_seconds": round(total_runtime_seconds, 6),
+            "measurement_scope": (
+                "Resource loading, CBEP planning, evidence execution, and evidence "
+                "normalization; report rendering and PDF export are excluded."
+            ),
+        },
     )
 
     return results
@@ -186,6 +234,7 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
     This path requires real S5-provided resources. If the model artifact or
     datasets are unavailable, the failure is surfaced directly to the caller.
     """
+    run_started_at = time.perf_counter()
     resource_bundle, X, y, sensitive_features = _load_real_s5_resources(audit_context)
     print("Mode: real S5 resources")
 
@@ -198,4 +247,5 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
         sensitive_features=sensitive_features,
         resource_bundle=resource_bundle,
         generate_pdf=generate_pdf,
+        run_started_at=run_started_at,
     )

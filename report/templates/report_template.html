@@ -62,7 +62,8 @@
       white-space: nowrap;
     }
     .status-completed { color: var(--green); background: var(--green-bg); }
-    .status-skipped, .status-limited, .status-partial { color: var(--amber); background: var(--amber-bg); }
+    .status-skipped, .status-limited, .status-partial,
+    .status-metadata-only { color: var(--amber); background: var(--amber-bg); }
     .status-failed { color: var(--red); background: var(--red-bg); }
     .status-not-applicable, .status-not-selected, .status-not-executed,
     .status-not-available { color: #4b5565; background: var(--grey-bg); }
@@ -75,6 +76,8 @@
     .fact { border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; background: #fbfcfe; }
     .fact-label { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
     .fact-value { display: block; margin-top: 3px; font-weight: 600; overflow-wrap: anywhere; }
+    .method-list { list-style: none; margin: 5px 0 0; padding: 0; font-weight: 600; }
+    .method-list li { margin: 3px 0; overflow-wrap: anywhere; }
     .callout { border-left: 4px solid var(--blue); background: #eef5ff; padding: 12px 15px; border-radius: 5px; margin: 12px 0; }
     .callout.success { border-color: var(--green); background: var(--green-bg); }
     .callout.warning { border-color: var(--amber); background: var(--amber-bg); }
@@ -161,7 +164,11 @@
     {% for paragraph in report.executive_summary.paragraphs %}<p class="lead">{{ paragraph }}</p>{% endfor %}
     <div class="facts-grid">
       {% for fact in report.executive_summary.facts %}
-      <div class="fact"><span class="fact-label">{{ fact.label }}</span><span class="fact-value">{{ fact.value }}</span></div>
+      <div class="fact">
+        <span class="fact-label">{{ fact.label }}</span>
+        {% if fact.get("items") %}<ul class="method-list">{% for item in fact.get("items") %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% else %}<span class="fact-value">{{ fact.value }}</span>{% endif %}
+      </div>
       {% endfor %}
     </div>
   </section>
@@ -196,8 +203,41 @@
     {% for warning in report.resource_summary.warnings %}<div class="callout warning"><strong>Resource limitation:</strong> {{ warning }}</div>{% endfor %}
   </section>
 
+  <section id="runtime-reproducibility">
+    <h2>4. Runtime and Reproducibility Information</h2>
+    <p>This section records the execution environment, resource contract, method runtimes, and generated artifacts needed to reproduce and review this audit run.</p>
+    <div class="facts-grid">
+      {% for fact in report.runtime_reproducibility.common_facts %}
+      <div class="fact">
+        <span class="fact-label">{{ fact.label }}</span>
+        {% if fact.get("items") %}<ul class="method-list">{% for item in fact.get("items") %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% else %}<span class="fact-value">{{ fact.value }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="callout"><strong>Runtime measurement scope:</strong> {{ report.runtime_reproducibility.measurement_scope }}</div>
+
+    <h3>Model and {{ report.runtime_reproducibility.contract_name }}</h3>
+    <div class="table-wrap"><table><tbody>
+      {% for row in report.runtime_reproducibility.model_rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
+      {% for row in report.runtime_reproducibility.contract_rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
+    </tbody></table></div>
+
+    <h3>Runtime per method</h3>
+    <div class="table-wrap"><table><thead><tr><th>Method</th><th>Status</th><th>Runtime seconds</th></tr></thead><tbody>
+      {% for row in report.runtime_reproducibility.runtime_rows %}<tr><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.runtime_seconds }}</td></tr>{% endfor %}
+    </tbody></table></div>
+
+    <h3>Output Artifacts Generated</h3>
+    {% if report.runtime_reproducibility.artifact_rows %}
+    <div class="table-wrap"><table><thead><tr><th>Artifact type</th><th>Produced by</th><th>Path</th></tr></thead><tbody>
+      {% for row in report.runtime_reproducibility.artifact_rows %}<tr><td>{{ row.type }}</td><td>{{ row.method }}</td><td>{{ row.path }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="callout">No method-specific artifacts generated.</div>{% endif %}
+  </section>
+
   <section id="cbep-planning">
-    <h2>4. CBEP Evidence Planning Summary</h2>
+    <h2>5. CBEP Evidence Planning Summary</h2>
     <p>CBEP selects a minimum sufficient evidence set from risk tier, applicable EU AI Act articles, governance priorities, CSP state, and task-method compatibility.</p>
     {% if report.cbep_summary.governance_adjustments %}<div class="callout"><strong>Governance adjustments:</strong> {{ report.cbep_summary.governance_adjustments | join("; ") }}</div>{% endif %}
     {% if report.cbep_summary.csp_adjustments %}<div class="callout warning"><strong>CSP planning note:</strong> {{ report.cbep_summary.csp_adjustments | join("; ") }}</div>{% endif %}
@@ -208,20 +248,20 @@
   </section>
 
   <section id="coverage-matrix">
-    <h2>5. Evidence Coverage Matrix</h2>
+    <h2>6. Evidence Coverage Matrix</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>Evidence Layer</th><th>Method</th><th>Status</th><th>EU AI Act Article</th><th>Main Output</th><th>Limitation</th></tr></thead>
-      <tbody>{% for row in report.coverage_matrix %}<tr><td>{{ row.layer }}</td><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.articles }}</td><td>{{ row.main_output }}</td><td>{{ row.limitation }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Evidence Layer</th><th>Evidence Type</th><th>Method</th><th>Status</th><th>EU AI Act Article</th><th>Main Output</th><th>Limitation</th></tr></thead>
+      <tbody>{% for row in report.coverage_matrix %}<tr><td>{{ row.layer }}</td><td>{{ row.evidence_type }}</td><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.articles }}</td><td>{{ row.main_output }}</td><td>{{ row.limitation }}</td></tr>{% endfor %}</tbody>
     </table></div>
   </section>
 
   <section id="evidence-findings">
-    <h2>6. Evidence Findings by Layer</h2>
+    <h2>7. Evidence Findings by Layer</h2>
     {% if not report.evidence_findings %}<div class="callout warning">No executable evidence findings were returned.</div>{% endif %}
     {% for finding in report.evidence_findings %}
     <article class="evidence-card">
       <div class="evidence-card-header">
-        <div><h3>{{ finding.method }}</h3><div class="method-meta">{{ finding.layer }} · {{ finding.articles }}</div></div>
+        <div><h3>{{ finding.method }}</h3><div class="method-meta">{{ finding.layer }} · {{ finding.evidence_type }} · {{ finding.articles }}</div></div>
         <span class="status-badge {{ finding.status.css_class }}">{{ finding.status.label }}</span>
       </div>
       <div class="evidence-card-body">
@@ -238,19 +278,13 @@
   </section>
 
   <section id="method-applicability">
-    <h2>7. Method Applicability and Skipped Evidence</h2>
+    <h2>8. Method Applicability and Skipped Evidence</h2>
     <p>{{ report.applicability.intro }}</p>
     {% if report.applicability.rows %}
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>CBEP Selected</th><th>Status</th><th>Reason</th></tr></thead><tbody>
       {% for row in report.applicability.rows %}<tr><td>{{ row.method }}</td><td>{{ row.selected }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.reason }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% else %}<div class="callout success">All CBEP-selected evidence methods completed.</div>{% endif %}
-  </section>
-
-  <section id="limitations">
-    <h2>8. Limitations</h2>
-    <div class="callout warning">The following limitations are reported explicitly and should be considered when using this evidence for audit conclusions.</div>
-    <ul class="limitations">{% for limitation in report.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
   </section>
 
   <section id="raw-evidence">

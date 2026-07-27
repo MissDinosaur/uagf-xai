@@ -6,81 +6,88 @@ from typing import Any
 
 from layers.llm.evidence_methods import (
     LLM_GROUNDING,
-    LLM_METHOD_ORDER,
     LLM_PROMPT_FAIRNESS,
     LLM_SELF_CONSISTENCY,
     LLM_SEMANTIC_DRIFT,
-    llm_method_display_name,
 )
+from report.method_ordering import (
+    LLM_METHOD_ORDER,
+    TRADITIONAL_METHOD_ORDER,
+    ordered_method_tokens,
+    ordered_result_keys,
+)
+from report.method_titles import report_method_title
+from report.runtime_metadata import infer_record_count
 
-
-TRADITIONAL_METHOD_ORDER = [
-    "shap",
-    "fairness",
-    "uncertainty",
-    "drift",
-    "lime",
-    "dice",
-]
 
 METHOD_CATALOG = {
     "shap": {
-        "name": "SHAP",
+        "name": report_method_title("shap"),
         "layer": "Explainability",
+        "evidence_type": "Feature attribution",
         "articles": "Art. 13",
         "result_key": "explainability",
     },
     "lime": {
-        "name": "LIME",
+        "name": report_method_title("lime"),
         "layer": "Explainability",
+        "evidence_type": "Local surrogate explanation",
         "articles": "Art. 13",
         "result_key": "lime",
     },
     "dice": {
-        "name": "DiCE",
-        "layer": "Counterfactual",
+        "name": report_method_title("dice"),
+        "layer": "Explainability",
+        "evidence_type": "Counterfactual explanation",
         "articles": "Art. 13",
         "result_key": "counterfactual",
     },
     "fairness": {
-        "name": "Fairlearn",
+        "name": report_method_title("fairness"),
         "layer": "Fairness",
+        "evidence_type": "Group fairness metrics",
         "articles": "Art. 10",
         "result_key": "fairness",
     },
     "uncertainty": {
-        "name": "MAPIE",
+        "name": report_method_title("uncertainty"),
         "layer": "Uncertainty",
+        "evidence_type": "Conformal prediction",
         "articles": "Art. 14 / Art. 15",
         "result_key": "uncertainty",
     },
     "drift": {
-        "name": "Evidently + Feature Drift Tests",
+        "name": report_method_title("drift"),
         "layer": "Drift",
+        "evidence_type": "Dataset / feature drift",
         "articles": "Art. 15 / Art. 61",
         "result_key": "drift",
     },
     LLM_GROUNDING: {
-        "name": llm_method_display_name(LLM_GROUNDING),
+        "name": report_method_title(LLM_GROUNDING),
         "layer": "LLM Grounding",
+        "evidence_type": "Grounding evaluation",
         "articles": "Art. 13",
         "result_key": LLM_GROUNDING,
     },
     LLM_SELF_CONSISTENCY: {
-        "name": llm_method_display_name(LLM_SELF_CONSISTENCY),
+        "name": report_method_title(LLM_SELF_CONSISTENCY),
         "layer": "LLM Uncertainty",
+        "evidence_type": "Self-consistency evaluation",
         "articles": "Art. 15",
         "result_key": LLM_SELF_CONSISTENCY,
     },
     LLM_SEMANTIC_DRIFT: {
-        "name": llm_method_display_name(LLM_SEMANTIC_DRIFT),
+        "name": report_method_title(LLM_SEMANTIC_DRIFT),
         "layer": "LLM Drift",
+        "evidence_type": "Semantic drift evaluation",
         "articles": "Art. 61",
         "result_key": LLM_SEMANTIC_DRIFT,
     },
     LLM_PROMPT_FAIRNESS: {
-        "name": llm_method_display_name(LLM_PROMPT_FAIRNESS),
+        "name": report_method_title(LLM_PROMPT_FAIRNESS),
         "layer": "LLM Fairness",
+        "evidence_type": "Differential prompt fairness",
         "articles": "Art. 10",
         "result_key": LLM_PROMPT_FAIRNESS,
     },
@@ -109,6 +116,42 @@ def _display(value, fallback="Not provided"):
     return value
 
 
+def _method_list_fact(label: str, methods: list[str]) -> dict:
+    """Represent report method lists without flattening them into one line."""
+    return {
+        "label": label,
+        "value": "None" if not methods else None,
+        "items": list(methods),
+    }
+
+
+def _clean_label(value, fallback="unspecified") -> str:
+    """Format internal enum-style values for report prose only."""
+    if value is None or value == "":
+        return fallback
+    text = str(value).strip().lower()
+    special = {
+        "llm": "LLM",
+        "llm_generation": "LLM generation",
+        "time_series": "time-series",
+        "binary_classification": "binary classification",
+        "multiclass_classification": "multiclass classification",
+        "anomaly_detection": "anomaly detection",
+        "partially_compliant": "partially compliant",
+    }
+    return special.get(text, text.replace("_", " "))
+
+
+def _executive_system_description(audit_context) -> str:
+    if _is_llm(audit_context):
+        system_type = str(_value(audit_context, "system_type", "") or "").lower()
+        return "agentic LLM system" if system_type == "agentic" else "LLM system"
+
+    modality = _clean_label(_value(audit_context, "modality"), "traditional ML")
+    task = _clean_label(_value(audit_context, "task_type"), "model evaluation")
+    return f"{modality} {task} system"
+
+
 def _web_path(value):
     if value in (None, ""):
         return None
@@ -121,7 +164,7 @@ def _layer_display(value):
         "fairness": "Fairness",
         "uncertainty": "Uncertainty",
         "drift": "Drift",
-        "counterfactual": "Counterfactual",
+        "counterfactual": "Explainability",
         "llm_explainability": "LLM Grounding",
         "llm_uncertainty": "LLM Uncertainty",
         "llm_drift": "LLM Drift",
@@ -166,6 +209,7 @@ def format_status_badge(status: str) -> dict[str, str]:
         "not_available": "Not available",
         "partial": "Partial coverage",
         "limited": "Execution limited",
+        "metadata_only": "Metadata-only",
     }
     return {
         "status": normalized,
@@ -174,13 +218,19 @@ def format_status_badge(status: str) -> dict[str, str]:
     }
 
 
+def _status_display(status) -> str:
+    if not status:
+        return "Not provided"
+    return format_status_badge(str(status))["label"]
+
+
 def _candidate_tokens(results: dict, audit_context) -> list[str]:
     return list(LLM_METHOD_ORDER if _is_llm(audit_context) else TRADITIONAL_METHOD_ORDER)
 
 
 def _selected_tokens(results: dict) -> list[str]:
     final_plan = _trace(results).get("final_plan", [])
-    return list(final_plan) if isinstance(final_plan, list) else []
+    return ordered_method_tokens(final_plan) if isinstance(final_plan, list) else []
 
 
 def _incompatible_tokens(results: dict) -> list[str]:
@@ -250,16 +300,16 @@ def build_executive_summary(results, audit_context, governance_context, provider
     else:
         overall = "not_available"
 
-    risk = _display(_value(audit_context, "risk_tier"), "unspecified-risk")
-    domain = str(_display(_value(audit_context, "application_domain"), "unspecified domain")).replace("_", " ")
-    task = str(_display(_value(audit_context, "task_type"), "unspecified task")).replace("_", " ")
-    system = str(_display(_value(audit_context, "system_type"), "unspecified system")).replace("_", " ")
+    risk = _clean_label(_value(audit_context, "risk_tier"), "unspecified")
+    domain = _clean_label(_value(audit_context, "application_domain"), "unspecified")
+    system_description = _executive_system_description(audit_context)
     method_text = ", ".join(selected_names) if selected_names else "no evidence methods"
 
     paragraphs = [
         (
-            f"This audit report evaluates {provider_name}, a {risk} {domain} "
-            f"{task} system ({system}). CBEP selected {method_text} using the "
+            f"This audit report evaluates {provider_name}, a {risk}-risk "
+            f"{system_description} in the {domain} domain. CBEP selected "
+            f"{method_text} using the "
             "S4 governance context, S5 audit context, EU AI Act article mapping, "
             "governance priorities, and task compatibility rules."
         )
@@ -296,9 +346,9 @@ def build_executive_summary(results, audit_context, governance_context, provider
             {"label": "System / task", "value": f"{_display(_value(audit_context, 'system_type'))} / {_display(_value(audit_context, 'task_type'))}"},
             {"label": "Governance score", "value": _display(_value(governance_context, "governance_score"))},
             {"label": "Governance verdict", "value": _display(_value(governance_context, "governance_verdict"))},
-            {"label": "Selected methods", "value": _display(selected_names, "None")},
-            {"label": "Completed methods", "value": _display(completed, "None")},
-            {"label": "Skipped / unavailable", "value": _display(skipped, "None")},
+            _method_list_fact("Selected methods", selected_names),
+            _method_list_fact("Completed methods", completed),
+            _method_list_fact("Skipped / unavailable", skipped),
         ],
         "selected_methods": selected_names,
         "overall_status": format_status_badge(overall),
@@ -328,7 +378,7 @@ def build_audit_scope(audit_context, governance_context, resource_context=None):
             {"label": "System prompt URI", "value": _display(_value(audit_context, "system_prompt_uri"))},
             {"label": "RAG manifest URI", "value": _display(_value(audit_context, "rag_manifest_uri"))},
             {"label": "Guardrail config URI", "value": _display(_value(audit_context, "guardrail_config_uri"))},
-            {"label": "Model artifact status", "value": _display(_value(resource_context, "model_status"))},
+            {"label": "Model artifact status", "value": _status_display(_value(resource_context, "model_status"))},
         ]
         contract_name = "LLM / Agentic golden-set contract"
     else:
@@ -384,7 +434,7 @@ def build_resource_summary(audit_context, resource_context):
     return {
         "narrative": narrative,
         "artifact_kind": artifact_kind,
-        "status": format_status_badge("partial" if status == "metadata_only" else "completed"),
+        "status": format_status_badge("metadata_only" if status == "metadata_only" else "completed"),
         "rows": [
             {"label": "Artifact type", "value": artifact_kind},
             {"label": "Loaded model form", "value": _display(model_container)},
@@ -424,8 +474,14 @@ def build_cbep_decision_table(results, audit_context):
         })
     return {
         "rows": rows,
-        "base_plan": [METHOD_CATALOG.get(item, {"name": item})["name"] for item in trace.get("base_plan", [])],
-        "article_plan": [METHOD_CATALOG.get(item, {"name": item})["name"] for item in trace.get("article_plan", [])],
+        "base_plan": [
+            METHOD_CATALOG.get(item, {"name": item})["name"]
+            for item in ordered_method_tokens(trace.get("base_plan", []))
+        ],
+        "article_plan": [
+            METHOD_CATALOG.get(item, {"name": item})["name"]
+            for item in ordered_method_tokens(trace.get("article_plan", []))
+        ],
         "governance_adjustments": _value(trace.get("governance_context", {}), "adjustments", []) or [],
         "csp_adjustments": trace.get("csp_adjustments", []) or [],
     }
@@ -481,7 +537,8 @@ def build_evidence_coverage_matrix(results, audit_context):
         status = _method_status(results, token)
         rows.append({
             "layer": _layer_display(result.get("layer", info["layer"])),
-            "method": result.get("method", info["name"]),
+            "evidence_type": info["evidence_type"],
+            "method": info["name"],
             "status": format_status_badge(status),
             "articles": ", ".join(result.get("article_mapping", [])),
             "main_output": _main_output(token, result, status),
@@ -566,7 +623,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
         }
 
     for key, value in evidence_metrics.items():
-        if isinstance(value, (dict, list, tuple)):
+        if key == "runtime_seconds" or isinstance(value, (dict, list, tuple)):
             continue
         metric_cards.append(
             {"label": key.replace("_", " ").title(), "value": value}
@@ -584,8 +641,9 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     return {
         "key": info["result_key"],
         "evidence_id": result.get("evidence_id"),
-        "method": result.get("method", info["name"]),
+        "method": info["name"],
         "layer": _layer_display(result.get("layer", info["layer"])),
+        "evidence_type": info["evidence_type"],
         "articles": ", ".join(result.get("article_mapping", [])),
         "status": format_status_badge(status),
         "narrative": result.get("summary") or "No evidence summary was provided.",
@@ -639,32 +697,152 @@ def build_method_applicability(results, audit_context):
     return {"intro": context_note, "rows": rows}
 
 
-def build_limitations(results, audit_context, resource_summary, applicability):
-    limitations = list(resource_summary.get("warnings", []))
-    task_type = str(_value(audit_context, "task_type", "") or "")
-    sensitive = _value(audit_context, "sensitive_feature_columns", []) or []
-    incompatible = _incompatible_tokens(results)
+def build_runtime_reproducibility(
+    results,
+    audit_context,
+    resource_context,
+    runtime_context,
+):
+    """Build a report-only view of execution and environment metadata."""
+    runtime_context = runtime_context or {}
+    resource_context = resource_context or {}
+    selected = _selected_tokens(results)
+    candidate_tokens = _candidate_tokens(results, audit_context)
 
-    if incompatible:
-        names = [METHOD_CATALOG.get(item, {"name": item})["name"] for item in incompatible]
-        limitations.append(
-            f"Task compatibility screening for {task_type} excluded: {', '.join(names)}."
+    completed = [
+        METHOD_CATALOG[token]["name"]
+        for token in candidate_tokens
+        if _method_status(results, token) == "completed"
+    ]
+    skipped_or_not_applicable = [
+        METHOD_CATALOG[token]["name"]
+        for token in candidate_tokens
+        if _method_status(results, token)
+        in {"skipped", "failed", "not_applicable", "not_executed"}
+    ]
+
+    runtime_rows = []
+    for token in candidate_tokens:
+        result = _method_result(results, token)
+        status = _method_status(results, token)
+        if token not in selected and result is None and status != "not_applicable":
+            continue
+        metrics = result.get("metrics", {}) if isinstance(result, dict) else {}
+        runtime_seconds = metrics.get("runtime_seconds", 0.0) if isinstance(metrics, dict) else 0.0
+        try:
+            runtime_display = f"{float(runtime_seconds):.3f}"
+        except (TypeError, ValueError):
+            runtime_display = "Unavailable"
+        runtime_rows.append(
+            {
+                "method": METHOD_CATALOG[token]["name"],
+                "status": format_status_badge(status),
+                "runtime_seconds": runtime_display,
+            }
         )
-    if not sensitive and not _is_llm(audit_context):
-        limitations.append(
-            "No sensitive feature columns were configured; group fairness evidence cannot be produced."
+
+    artifact_rows = []
+    seen_artifacts = set()
+
+    def add_artifact(artifact_type, method, path):
+        if not path:
+            return
+        normalized_path = str(path)
+        if normalized_path in seen_artifacts:
+            return
+        seen_artifacts.add(normalized_path)
+        artifact_rows.append(
+            {"type": artifact_type, "method": method, "path": normalized_path}
         )
-    if any("age" in str(item).lower() for item in sensitive):
-        limitations.append(
-            "Age is evaluated using the supplied raw values; grouped age bands are not generated automatically."
+
+    add_artifact(
+        "HTML audit report",
+        "Report exporter",
+        runtime_context.get("html_report_path"),
+    )
+    if runtime_context.get("pdf_generated"):
+        add_artifact(
+            "PDF audit report",
+            "Report exporter",
+            runtime_context.get("pdf_report_path"),
         )
-    drift = results.get("drift")
-    if isinstance(drift, dict):
-        limitations.extend(drift.get("limitations") or [])
-    for row in applicability.get("rows", []):
-        if row["status"]["status"] == "not_executed":
-            limitations.append(f"{row['method']}: {row['reason']}")
-    return list(dict.fromkeys(str(item) for item in limitations if item))
+
+    for result_key in ordered_result_keys(results):
+        result = results[result_key]
+        if not isinstance(result, dict):
+            continue
+        token = RESULT_KEY_TO_TOKEN.get(result_key)
+        title = METHOD_CATALOG[token]["name"] if token in METHOD_CATALOG else _display(result.get("method"), result_key)
+        for artifact_path in result.get("artifacts") or []:
+            suffix = str(artifact_path).rsplit(".", 1)[-1].upper() if "." in str(artifact_path) else "Artifact"
+            add_artifact(f"{suffix} evidence artifact", title, artifact_path)
+
+    total_runtime = runtime_context.get("total_runtime_seconds")
+    try:
+        total_runtime_display = f"{float(total_runtime):.3f} seconds"
+    except (TypeError, ValueError):
+        total_runtime_display = "Unavailable"
+
+    common_facts = [
+        {"label": "Run timestamp", "value": _display(runtime_context.get("run_timestamp"))},
+        {"label": "Python version", "value": _display(runtime_context.get("python_version"))},
+        {"label": "Platform", "value": _display(runtime_context.get("platform"))},
+        _method_list_fact(
+            "Selected methods",
+            [METHOD_CATALOG.get(token, {"name": token})["name"] for token in selected],
+        ),
+        _method_list_fact("Completed methods", completed),
+        _method_list_fact("Skipped / not applicable", skipped_or_not_applicable),
+        {"label": "Total runtime", "value": total_runtime_display},
+        {"label": "HTML report path", "value": _display(runtime_context.get("html_report_path"))},
+        {"label": "PDF report path", "value": _display(runtime_context.get("pdf_report_path") if runtime_context.get("pdf_generated") else None, "Not generated")},
+    ]
+
+    model_rows = [
+        {"label": "Model artifact URI", "value": _display(_value(audit_context, "model_artifact_uri"))},
+        {"label": "Model format", "value": _display(_value(audit_context, "model_format"))},
+        {"label": "Model framework", "value": _display(_value(audit_context, "model_framework"))},
+        {"label": "Model type", "value": _display(_value(audit_context, "model_type"))},
+        {"label": "Model entrypoint", "value": _display(_value(audit_context, "model_entrypoint"))},
+        {"label": "Model loadability", "value": "Loadable" if resource_context.get("model_is_loadable") is True else "Not loadable" if resource_context.get("model_is_loadable") is False else "Unavailable"},
+        {"label": "Model artifact status", "value": _status_display(resource_context.get("model_status"))},
+        {"label": "Loaded metadata files", "value": _display(resource_context.get("loaded_metadata_files", []), "None")},
+    ]
+
+    if _is_llm(audit_context):
+        golden_count = resource_context.get("golden_set_records")
+        if golden_count is None:
+            golden_count = infer_record_count(resource_context.get("golden_set"))
+        contract_name = "LLM / Agentic golden-set contract"
+        contract_rows = [
+            {"label": "Golden set URI", "value": _display(_value(audit_context, "golden_set_uri"))},
+            {"label": "Golden-set records", "value": _display(golden_count, "Unavailable")},
+            {"label": "System prompt URI", "value": _display(_value(audit_context, "system_prompt_uri"))},
+            {"label": "RAG manifest URI", "value": _display(_value(audit_context, "rag_manifest_uri"))},
+            {"label": "Guardrail config URI", "value": _display(_value(audit_context, "guardrail_config_uri"))},
+            {"label": "Metadata-only", "value": "Yes" if resource_context.get("model_status") == "metadata_only" else "No"},
+            {"label": "Training dataset required", "value": "No"},
+            {"label": "Evaluation dataset required", "value": "No"},
+        ]
+    else:
+        contract_name = "Traditional ML dataset contract"
+        contract_rows = [
+            {"label": "Training dataset URI", "value": _display(_value(audit_context, "training_dataset_uri"))},
+            {"label": "Evaluation dataset URI", "value": _display(_value(audit_context, "evaluation_dataset_uri"))},
+            {"label": "Target column", "value": _display(_value(audit_context, "target_column"))},
+            {"label": "Training rows", "value": _display(resource_context.get("training_dataset_rows"), "Unavailable")},
+            {"label": "Evaluation rows", "value": _display(resource_context.get("evaluation_dataset_rows"), "Unavailable")},
+        ]
+
+    return {
+        "common_facts": common_facts,
+        "model_rows": model_rows,
+        "contract_name": contract_name,
+        "contract_rows": contract_rows,
+        "runtime_rows": runtime_rows,
+        "artifact_rows": artifact_rows,
+        "measurement_scope": _display(runtime_context.get("measurement_scope")),
+    }
 
 
 def build_report_model(
@@ -673,6 +851,7 @@ def build_report_model(
     governance_context,
     resource_context,
     provider_name: str,
+    runtime_context=None,
 ) -> dict:
     resource_summary = build_resource_summary(audit_context, resource_context)
     applicability = build_method_applicability(results, audit_context)
@@ -684,11 +863,14 @@ def build_report_model(
             audit_context, governance_context, resource_context
         ),
         "resource_summary": resource_summary,
+        "runtime_reproducibility": build_runtime_reproducibility(
+            results,
+            audit_context,
+            resource_context,
+            runtime_context,
+        ),
         "cbep_summary": build_cbep_decision_table(results, audit_context),
         "coverage_matrix": build_evidence_coverage_matrix(results, audit_context),
         "evidence_findings": build_evidence_findings(results, audit_context),
         "applicability": applicability,
-        "limitations": build_limitations(
-            results, audit_context, resource_summary, applicability
-        ),
     }

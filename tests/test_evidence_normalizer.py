@@ -1,0 +1,131 @@
+import pytest
+
+from layers.llm.evidence_methods import LLM_GROUNDING
+from pipeline.evidence_normalizer import REQUIRED_FIELDS, normalize_evidence_results
+from schema.evidence_schema import EVIDENCE_STATUSES, completed_evidence
+
+
+@pytest.mark.parametrize(
+    ("result_key", "raw"),
+    [
+        (
+            "explainability",
+            {
+                "type": "explainability",
+                "method": "SHAP",
+                "top_features": ["age"],
+                "feature_importance": [{"feature": "age", "importance": 0.7}],
+            },
+        ),
+        (
+            "fairness",
+            {
+                "type": "fairness",
+                "method": "Fairlearn",
+                "gender": {
+                    "demographic_parity_difference": 0.1,
+                    "equalized_odds_difference": 0.05,
+                },
+            },
+        ),
+        (
+            "uncertainty",
+            {
+                "type": "uncertainty",
+                "method": "MAPIE",
+                "confidence_level": 0.9,
+                "coverage": 0.88,
+                "mean_interval_width": 1.2,
+                "coverage_gap": 0.02,
+            },
+        ),
+        (
+            "drift",
+            {
+                "type": "drift",
+                "method": "Evidently",
+                "drift_share": 0.25,
+                "features_analyzed": 4,
+                "drifted_features": ["age"],
+            },
+        ),
+        (
+            "counterfactual",
+            {
+                "type": "counterfactual",
+                "method": "DiCE",
+                "counterfactuals_count": 2,
+                "output": "counterfactuals.json",
+            },
+        ),
+    ],
+)
+def test_legacy_runner_outputs_are_normalized_and_preserved(result_key, raw):
+    result = normalize_evidence_results({result_key: raw})[result_key]
+
+    assert REQUIRED_FIELDS <= set(result)
+    assert result["status"] == "completed"
+    assert result["raw_output"] == raw
+
+
+def test_llm_skipped_output_becomes_unified_evidence():
+    raw = {
+        "type": "llm_evidence",
+        "method": "LLM-E1 Grounding Score",
+        "status": "skipped",
+        "reason": "metadata-only",
+        "available_resources": ["golden_set", "model_metadata"],
+    }
+
+    result = normalize_evidence_results({LLM_GROUNDING: raw})[LLM_GROUNDING]
+
+    assert result["evidence_id"] == "LLM-E1"
+    assert result["status"] == "skipped"
+    assert result["raw_output"] == raw
+
+
+def test_existing_unified_evidence_is_preserved():
+    unified = completed_evidence(
+        evidence_id="CUSTOM",
+        layer="explainability",
+        method="SHAP",
+        metrics={"score": 1.0},
+        raw_output={"source": "already-unified"},
+    )
+
+    result = normalize_evidence_results({"explainability": unified})
+
+    assert result["explainability"] == unified
+
+
+def test_incompatible_methods_receive_not_applicable_results():
+    assessment = {
+        "task_type": "forecasting",
+        "incompatible_methods": ["fairness", "dice"],
+    }
+    trace = {"task_type": "forecasting", "task_compatibility_assessment": assessment}
+
+    result = normalize_evidence_results({}, cbep_trace=trace, task_type="forecasting")
+
+    assert result["fairness"]["status"] == "not_applicable"
+    assert result["counterfactual"]["status"] == "not_applicable"
+
+
+def test_selected_method_without_executor_output_is_failed():
+    trace = {"task_type": "binary_classification", "final_plan": ["shap"]}
+
+    result = normalize_evidence_results({}, cbep_trace=trace)
+
+    assert result["explainability"]["status"] == "failed"
+    assert "executor returned no evidence" in result["explainability"]["summary"]
+
+
+def test_all_normalized_statuses_are_allowed():
+    raw_results = {
+        "explainability": {"status": "skipped", "reason": "not available"},
+        "fairness": {"status": "failed", "error": "metric error"},
+    }
+
+    normalized = normalize_evidence_results(raw_results)
+
+    assert all(item["status"] in EVIDENCE_STATUSES for item in normalized.values())

@@ -18,6 +18,21 @@ UAGF-XAI is the S6 evidence generation component of the UAGF platform. It provid
 - Use `--no-pdf` to generate HTML without running the optional PDF export step.
 - If Playwright or Chromium is unavailable, HTML generation still succeeds and the CLI prints explicit installation guidance.
 
+## Testing
+
+Run the fast, offline unit test suite with:
+
+```bash
+python -m pytest
+```
+
+The real Playwright PDF smoke test is marked as optional integration coverage
+and excluded from the default run. Execute it explicitly with:
+
+```bash
+python -m pytest -m integration
+```
+
 UAGF-XAI is an automated AI audit evidence generator that integrates explainability, fairness, uncertainty and drift detection tools into a unified pipeline guided by a constraint-based evidence planner.
 
 The proposed system architecture integrates multiple AI auditing techniques into a unified pipeline. The system receives an AI model and its associated dataset as input. A Constraint-Based Evidence Planner (CBEP) determines which analytical methods should be executed depending on the AI system risk level.

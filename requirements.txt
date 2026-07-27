@@ -13,3 +13,4 @@ python-constraint
 transformers
 torch
 playwright
+pytest

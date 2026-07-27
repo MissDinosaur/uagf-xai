@@ -236,6 +236,16 @@ class ModelLoader:
         model_type = resolved["model_type"]
         model_entrypoint = resolved["model_entrypoint"]
 
+        if not resolved["is_directory_contract"] and not source_path.exists():
+            raise FileNotFoundError(
+                "Model artifact not found. "
+                f"uri={resolved['uri']!r}, resolved_path={str(source_path)!r}, "
+                f"model_format={model_format!r}, "
+                f"model_framework={model_framework!r}, "
+                f"model_type={model_type!r}, "
+                f"model_entrypoint={model_entrypoint!r}"
+            )
+
         if resolved["is_directory_contract"]:
             print(
                 "[ModelLoader] Loaded model directory: "

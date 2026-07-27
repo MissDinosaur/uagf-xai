@@ -1,0 +1,78 @@
+from adapters.s4_governance_adapter import GovernanceContext
+from adapters.s5_audit_adapter import AuditContext
+from layers.llm.evidence_methods import LLM_METHOD_ORDER
+from planner.cbep import plan_evidence
+
+
+def _audit(task_type, *, system_type="traditional", articles=None):
+    return AuditContext(
+        system_type=system_type,
+        modality="text" if system_type in {"llm", "agentic"} else "tabular",
+        application_domain="test",
+        risk_tier="high",
+        applicable_articles=list(articles or []),
+        blocking_findings=[],
+        csp_satisfied=True,
+        sensitive_feature_columns=["gender"],
+        task_type=task_type,
+    )
+
+
+def test_high_risk_binary_classification_selects_traditional_evidence():
+    methods, trace = plan_evidence(
+        _audit("binary_classification", articles=["Art10", "Art13", "Art15"])
+    )
+
+    assert methods == ["shap", "fairness", "uncertainty", "drift", "lime", "dice"]
+    assert trace["final_plan"] == methods
+
+
+def test_forecasting_filters_classification_only_methods():
+    methods, trace = plan_evidence(_audit("forecasting", articles=["Art13"]))
+
+    assert methods == ["shap", "drift"]
+    incompatible = trace["task_compatibility_assessment"]["incompatible_methods"]
+    assert incompatible == ["fairness", "uncertainty", "lime", "dice"]
+
+
+def test_anomaly_detection_filters_probability_dependent_methods():
+    methods, trace = plan_evidence(_audit("anomaly_detection", articles=["Art13"]))
+
+    assert methods == ["shap", "drift"]
+    incompatible = trace["task_compatibility_assessment"]["incompatible_methods"]
+    assert "dice" in incompatible
+    assert "uncertainty" in incompatible
+
+
+def test_high_risk_agentic_case_selects_professor_defined_llm_path():
+    methods, trace = plan_evidence(
+        _audit("llm_generation", system_type="agentic", articles=[])
+    )
+
+    assert methods == LLM_METHOD_ORDER
+    assert trace["final_plan_display_names"] == [
+        "LLM-E1 Grounding Score",
+        "LLM-E2 Self-Consistency Score",
+        "LLM-E3 Semantic Drift Index",
+        "LLM-E4 Differential Prompt Fairness",
+    ]
+
+
+def test_trace_contains_planning_and_governance_inputs():
+    governance = GovernanceContext(
+        governance_score=3.0,
+        governance_verdict="PASS_WITH_OBSERVATIONS",
+        domain_scores={"Monitoring and Incident Response": 2.0},
+    )
+
+    _, trace = plan_evidence(_audit("binary_classification"), governance)
+
+    for key in (
+        "base_plan",
+        "article_plan",
+        "final_plan",
+        "task_compatibility_assessment",
+        "governance_context",
+    ):
+        assert key in trace
+    assert trace["governance_context"]["status"] == "applied"

@@ -7,6 +7,7 @@ from layers.llm.evidence_methods import LLM_METHOD_ORDER, llm_method_display_nam
 from report import report_generator
 from report.method_titles import report_method_title
 from schema.evidence_schema import not_applicable_evidence, skipped_evidence
+from schema.evidence_schema import completed_evidence
 
 
 def _trace(final_plan, incompatible=None):
@@ -104,6 +105,59 @@ def test_report_renders_skipped_and_not_applicable_statuses(
     assert "status-skipped" in html
     assert "status-not-applicable" in html
     assert "No sensitive features." in html
+    assert 'class="callout limitation"' in html
+
+
+def test_report_reorganizes_scope_resources_and_runtime_without_duplicates(
+    tmp_path,
+    monkeypatch,
+    traditional_audit_context,
+    governance_context,
+    unified_result_factory,
+):
+    output = _output_to(tmp_path, monkeypatch)
+    traditional_audit_context.model_artifact_uri = "file://data/model.joblib"
+    traditional_audit_context.model_format = "joblib"
+    traditional_audit_context.model_framework = "sklearn"
+    traditional_audit_context.model_type = "classifier"
+    traditional_audit_context.training_dataset_uri = "file://data/train.csv"
+    traditional_audit_context.evaluation_dataset_uri = "file://data/eval.csv"
+
+    report_generator.generate_report(
+        {
+            "explainability": unified_result_factory(),
+            "_cbep_trace": _trace(["shap"]),
+        },
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        resource_context={
+            "resolved_path": r"data\case\model.joblib",
+            "model_is_loadable": True,
+            "training_dataset_loaded": True,
+            "evaluation_dataset_loaded": True,
+            "training_dataset_rows": 100,
+            "evaluation_dataset_rows": 25,
+        },
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+    audit_scope = html.split('<section id="audit-scope">', 1)[1].split("</section>", 1)[0]
+    resources = html.split('<section id="resource-loading">', 1)[1].split("</section>", 1)[0]
+    runtime = html.split('<section id="runtime-reproducibility">', 1)[1].split("</section>", 1)[0]
+
+    assert audit_scope.index("Contract-specific inputs") < audit_scope.index("Target column")
+    assert audit_scope.count("Target column") == 1
+    assert audit_scope.count("Positive label") == 1
+    assert audit_scope.count("Sensitive features") == 1
+    assert "Model and Traditional ML dataset contract" in resources
+    assert "data/case/model.joblib" in resources
+    assert "Training dataset URI" in resources
+    assert "Training rows" in resources
+    assert "Selected methods" not in runtime
+    assert "Completed methods" not in runtime
+    assert "Skipped / not applicable" not in runtime
+    assert "Model and Traditional ML dataset contract" not in runtime
 
 
 def test_llm_report_uses_professor_defined_method_names(tmp_path, monkeypatch, governance_context):
@@ -232,3 +286,58 @@ def test_generate_report_invokes_pdf_exporter_when_enabled(
 
     assert calls == [(output, output.with_suffix(".pdf"))]
     assert output.with_suffix(".pdf").read_bytes() == b"%PDF-test"
+
+
+def test_report_renders_structured_dice_evidence_under_explainability(
+    tmp_path, monkeypatch, traditional_audit_context, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    result = completed_evidence(
+        evidence_id="EXP-DICE",
+        layer="explainability",
+        method="DiCE",
+        article_mapping=["Art. 13"],
+        summary="Structured counterfactual explanation.",
+        key_findings=["One counterfactual was generated."],
+        metrics={
+            "counterfactuals_count": 1,
+            "original_prediction": 1,
+            "desired_class": "opposite",
+            "counterfactual_prediction": 0,
+            "changed_features_count": 1,
+            "changed_features": [
+                {
+                    "feature": "income",
+                    "original_value": 80_000,
+                    "counterfactual_value": 40_000,
+                    "delta": -40_000,
+                }
+            ],
+        },
+        artifacts=["outputs/dice/test_counterfactuals.json"],
+        limitations=["Domain review is required."],
+        raw_output={"counterfactuals": [{"changed_features": []}]},
+    )
+
+    report_generator.generate_report(
+        {
+            "counterfactual": result,
+            "_cbep_trace": _trace(["dice"]),
+        },
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "Explainability Evidence — DiCE Counterfactual Explanation" in html
+    assert "Explainability · Counterfactual explanation · Art. 13" in html
+    assert "Original Prediction" in html
+    assert "Desired Class" in html
+    assert "Changed Features Count" in html
+    assert "<th>Feature</th>" in html
+    assert "<th>Original value</th>" in html
+    assert "<th>Counterfactual value</th>" in html
+    assert "Open full structured DiCE JSON artifact" in html
+    assert "Counterfactual · Counterfactual explanation" not in html

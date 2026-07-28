@@ -254,6 +254,7 @@ def execute(
                     y,
                     provider_name=provider_name,
                     output_namespace=output_namespace,
+                    sensitive_features=sensitive_features,
                 )
             )
         else:

@@ -39,7 +39,7 @@ EVIDENCE_CATALOG = {
     "dice": {
         "result_key": "counterfactual",
         "evidence_id": "EXP-DICE",
-        "layer": "counterfactual",
+        "layer": "explainability",
         "method": "DiCE",
         "articles": ["Art. 13"],
     },
@@ -311,18 +311,62 @@ def _normalize_drift(raw: dict) -> dict:
 
 
 def _normalize_dice(raw: dict) -> dict:
-    count = raw.get("counterfactuals_count")
+    counterfactuals = deepcopy(raw.get("counterfactuals") or [])
+    count = raw.get("counterfactuals_count", len(counterfactuals))
+    first = counterfactuals[0] if counterfactuals else {}
+    changed_features = deepcopy(
+        first.get("changed_features") or raw.get("changed_features") or []
+    )
+    changed_count = first.get("number_of_changed_features", len(changed_features))
+    desired_class = raw.get("desired_class")
+    findings = [f"{count} counterfactual explanation(s) were generated."]
+    if counterfactuals:
+        findings.extend(
+            [
+                f"The first counterfactual changes {changed_count} feature(s).",
+                f"The desired class was {desired_class}.",
+            ]
+        )
     return completed_evidence(
         **_base_payload("dice", raw),
-        summary="DiCE generated counterfactual examples for local decision explanation.",
-        key_findings=[
-            f"{count} counterfactual result set(s) were generated.",
-            f"The artifact was saved to {raw.get('output')}.",
-        ],
-        metrics={"counterfactuals_count": count},
-        limitations=[
+        summary=(
+            "DiCE generated counterfactual explanations for one evaluation instance. "
+            "The counterfactual example indicates which input features would need "
+            "to change for the model to produce the opposite prediction. These "
+            "changes support local decision understanding but should be reviewed "
+            "for feasibility and domain validity."
+        ),
+        key_findings=findings,
+        metrics={
+            "counterfactuals_count": count,
+            "original_prediction": raw.get("original_prediction"),
+            "original_prediction_proba": deepcopy(
+                raw.get("original_prediction_proba")
+            ),
+            "desired_class": desired_class,
+            "counterfactual_prediction": first.get(
+                "counterfactual_prediction",
+                raw.get("counterfactual_prediction"),
+            ),
+            "counterfactual_prediction_proba": deepcopy(
+                first.get(
+                    "counterfactual_prediction_proba",
+                    raw.get("counterfactual_prediction_proba"),
+                )
+            ),
+            "changed_features_count": changed_count,
+            "changed_features": changed_features,
+            "counterfactuals": counterfactuals,
+            "generation_method": raw.get("generation_method"),
+            "sensitive_or_immutable_change_detected": (
+                raw.get("changed_features_summary", {}).get(
+                    "sensitive_or_immutable_change_detected"
+                )
+            ),
+        },
+        limitations=list(raw.get("limitations") or [
             "Counterfactual examples should be reviewed for feasibility and domain validity."
-        ],
+        ]),
     )
 
 

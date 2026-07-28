@@ -103,23 +103,40 @@ def test_report_sections_use_one_central_order_for_shuffled_results(
     )
     html = output.read_text(encoding="utf-8")
     titles = [report_method_title(token) for token in TRADITIONAL_METHOD_ORDER]
+    short_names = [METHOD_CATALOG[token]["short_name"] for token in TRADITIONAL_METHOD_ORDER]
 
-    for section_id in (
-        "executive-summary",
-        "runtime-reproducibility",
-        "coverage-matrix",
-        "evidence-findings",
-        "raw-evidence",
-    ):
+    for section_id in ("runtime-reproducibility", "evidence-findings", "raw-evidence"):
         section = html.split(f'<section id="{section_id}">', 1)[1].split("</section>", 1)[0]
         _assert_order(section, titles)
+
+    for section_id in ("cbep-planning", "coverage-matrix"):
+        section = html.split(f'<section id="{section_id}">', 1)[1].split("</section>", 1)[0]
+        _assert_order(section, short_names)
+
+    executive = html.split('<section id="executive-summary">', 1)[1].split("</section>", 1)[0]
+    selected_methods_box = executive.split("Selected methods", 1)[1].split(
+        "Completed methods", 1
+    )[0]
+    _assert_order(
+        selected_methods_box,
+        [
+            "SHAP: Feature Attribution",
+            "LIME: Local Explanation",
+            "DiCE: Counterfactual Explanation",
+            "Fairlearn",
+            "MAPIE",
+            "Evidently + Feature Drift Tests",
+        ],
+    )
+    assert "Explainability Evidence — SHAP, LIME and DiCE" in executive
 
     coverage = html.split('<section id="coverage-matrix">', 1)[1].split("</section>", 1)[0]
     assert (
         "<td>Explainability</td><td>Counterfactual explanation</td>"
-        "<td>Explainability Evidence — DiCE Counterfactual Explanation</td>"
+        "<td>DiCE</td>"
     ) in coverage
-    assert "<ul class=\"method-list\"><li>" in html
+    assert '<span class="method-group-title">Explainability Evidence</span>' in html
+    assert "<ul class=\"method-group-items\"><li>" in html
     raw_section = unescape(html.split('<section id="raw-evidence">', 1)[1])
     _assert_order(
         raw_section,

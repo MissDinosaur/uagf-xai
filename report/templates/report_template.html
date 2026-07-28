@@ -76,11 +76,26 @@
     .fact { border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; background: #fbfcfe; }
     .fact-label { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
     .fact-value { display: block; margin-top: 3px; font-weight: 600; overflow-wrap: anywhere; }
-    .method-list { list-style: none; margin: 5px 0 0; padding: 0; font-weight: 600; }
-    .method-list li { margin: 3px 0; overflow-wrap: anywhere; }
+    .method-groups { margin-top: 5px; }
+    .method-group { margin: 7px 0; }
+    .method-group-title { display: block; font-weight: 700; color: var(--navy); }
+    .method-group-items { list-style: none; margin: 2px 0 0; padding: 0; font-weight: 600; }
+    .method-group-items li { margin: 2px 0; overflow-wrap: anywhere; }
+    .method-group-items li::before { content: "— "; color: var(--muted); }
     .callout { border-left: 4px solid var(--blue); background: #eef5ff; padding: 12px 15px; border-radius: 5px; margin: 12px 0; }
     .callout.success { border-color: var(--green); background: var(--green-bg); }
     .callout.warning { border-color: var(--amber); background: var(--amber-bg); }
+    .callout.limitation {
+      border-left-width: 2px;
+      border-color: #c8b987;
+      background: #faf9f5;
+      color: #667085;
+      font-size: .75rem;
+      line-height: 1.35;
+      padding: 6px 9px;
+      margin: 6px 0;
+    }
+    .callout.limitation strong { color: #5d687a; font-weight: 600; }
     .callout.danger { border-color: var(--red); background: var(--red-bg); }
     .table-wrap { overflow-x: auto; margin: 12px 0; }
     table { border-collapse: collapse; width: 100%; font-size: .88rem; }
@@ -166,7 +181,15 @@
       {% for fact in report.executive_summary.facts %}
       <div class="fact">
         <span class="fact-label">{{ fact.label }}</span>
-        {% if fact.get("items") %}<ul class="method-list">{% for item in fact.get("items") %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% if fact.get("groups") %}
+        <div class="method-groups">
+          {% for group in fact.get("groups") %}
+          <div class="method-group">
+            <span class="method-group-title">{{ group.label }}</span>
+            <ul class="method-group-items">{% for item in group.get("items") %}<li>{{ item }}</li>{% endfor %}</ul>
+          </div>
+          {% endfor %}
+        </div>
         {% else %}<span class="fact-value">{{ fact.value }}</span>{% endif %}
       </div>
       {% endfor %}
@@ -175,7 +198,6 @@
 
   <section id="audit-scope">
     <h2>2. Audit Scope and Input Context</h2>
-    <div class="callout"><strong>Resource contract:</strong> {{ report.audit_scope.contract_name }}</div>
     <div class="facts-grid">
       {% for row in report.audit_scope.common_rows %}
       <div class="fact"><span class="fact-label">{{ row.label }}</span><span class="fact-value">{{ row.value }}</span></div>
@@ -197,6 +219,7 @@
     <h2>3. Resource Loading Summary</h2>
     <p><span class="status-badge {{ report.resource_summary.status.css_class }}">{{ report.resource_summary.status.label }}</span></p>
     <p>{{ report.resource_summary.narrative }}</p>
+    <h3>Model and {{ report.resource_summary.contract_name }}</h3>
     <div class="table-wrap"><table><tbody>
       {% for row in report.resource_summary.rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
     </tbody></table></div>
@@ -205,23 +228,16 @@
 
   <section id="runtime-reproducibility">
     <h2>4. Runtime and Reproducibility Information</h2>
-    <p>This section records the execution environment, resource contract, method runtimes, and generated artifacts needed to reproduce and review this audit run.</p>
+    <p>This section records the execution environment, method runtimes, and generated artifacts needed to reproduce and review this audit run.</p>
     <div class="facts-grid">
       {% for fact in report.runtime_reproducibility.common_facts %}
       <div class="fact">
         <span class="fact-label">{{ fact.label }}</span>
-        {% if fact.get("items") %}<ul class="method-list">{% for item in fact.get("items") %}<li>{{ item }}</li>{% endfor %}</ul>
-        {% else %}<span class="fact-value">{{ fact.value }}</span>{% endif %}
+        <span class="fact-value">{{ fact.value }}</span>
       </div>
       {% endfor %}
     </div>
     <div class="callout"><strong>Runtime measurement scope:</strong> {{ report.runtime_reproducibility.measurement_scope }}</div>
-
-    <h3>Model and {{ report.runtime_reproducibility.contract_name }}</h3>
-    <div class="table-wrap"><table><tbody>
-      {% for row in report.runtime_reproducibility.model_rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
-      {% for row in report.runtime_reproducibility.contract_rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
-    </tbody></table></div>
 
     <h3>Runtime per method</h3>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Status</th><th>Runtime seconds</th></tr></thead><tbody>
@@ -270,8 +286,8 @@
         {% if finding.metrics %}<div class="facts-grid">{% for metric in finding.metrics %}<div class="fact"><span class="fact-label">{{ metric.label }}</span><span class="fact-value">{{ metric.value }}</span></div>{% endfor %}</div>{% endif %}
         {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.plot %}<img class="plot" src="../../{{ finding.plot }}" alt="{{ finding.method }} evidence visualization">{% endif %}
-        {% if finding.output %}<p><a href="../../{{ finding.output }}">Open generated {{ finding.method }} artifact</a></p>{% endif %}
-        {% for limitation in finding.limitations %}<div class="callout warning"><strong>Interpretation limitation:</strong> {{ limitation }}</div>{% endfor %}
+        {% if finding.output %}<p><a href="../../{{ finding.output }}">{{ finding.output_label }}</a></p>{% endif %}
+        {% for limitation in finding.limitations %}<div class="callout limitation"><strong>Interpretation limitation:</strong> {{ limitation }}</div>{% endfor %}
       </div>
     </article>
     {% endfor %}

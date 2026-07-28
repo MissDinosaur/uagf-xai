@@ -129,3 +129,42 @@ def test_all_normalized_statuses_are_allowed():
     normalized = normalize_evidence_results(raw_results)
 
     assert all(item["status"] in EVIDENCE_STATUSES for item in normalized.values())
+
+
+def test_structured_dice_output_is_normalized_as_explainability():
+    raw = {
+        "type": "explainability",
+        "method": "DiCE",
+        "evidence_type": "counterfactual_explanation",
+        "original_prediction": 1,
+        "original_prediction_proba": [0.1, 0.9],
+        "desired_class": "opposite",
+        "counterfactuals_count": 1,
+        "counterfactuals": [
+            {
+                "counterfactual_id": 1,
+                "counterfactual_prediction": 0,
+                "counterfactual_prediction_proba": [0.8, 0.2],
+                "changed_features": [
+                    {
+                        "feature": "income",
+                        "original_value": 80_000,
+                        "counterfactual_value": 40_000,
+                        "delta": -40_000,
+                    }
+                ],
+                "number_of_changed_features": 1,
+            }
+        ],
+        "output": "outputs/dice/test_counterfactuals.json",
+        "limitations": ["Domain review is required."],
+    }
+
+    result = normalize_evidence_results({"counterfactual": raw})["counterfactual"]
+
+    assert result["evidence_id"] == "EXP-DICE"
+    assert result["layer"] == "explainability"
+    assert result["method"] == "DiCE"
+    assert result["metrics"]["changed_features_count"] == 1
+    assert result["metrics"]["changed_features"][0]["feature"] == "income"
+    assert result["raw_output"] == raw

@@ -66,6 +66,10 @@ _CBEP_ARTICLES: frozenset[str] = frozenset(
 
 _ARTICLE_RE = re.compile(r"^Art\.?(\d+)$")
 
+# EU AI Act Annex III lists high-risk AI system use-case areas.
+# This mapping converts Annex III section numbers from S5 audit input
+# into normalized UAGF-XAI application_domain labels.
+# Source: Regulation (EU) 2024/1689, Annex III.
 _ANNEX_III_SECTION_MAP: dict[str, str] = {
     "1": "biometrics",
     "2": "critical_infrastructure",

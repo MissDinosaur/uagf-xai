@@ -12,18 +12,15 @@ Expected S4 / CGSA canonical report structure
         "governance_verdict":       "FAIL"
     },
     "domains": [
-        {"domain_id": "D1", "domain_name": "Risk Management",         "domain_score": 2.86},
-        {"domain_id": "D2", "domain_name": "Data Governance",          "domain_score": 2.86},
-        {"domain_id": "D3", "domain_name": "Model Development and Testing", "domain_score": 2.71},
-        {"domain_id": "D4", "domain_name": "Transparency and Explainability", "domain_score": 2.00},
+        {"domain_id": "D1", "domain_name": "Risk Management",                    "domain_score": 2.86},
+        {"domain_id": "D2", "domain_name": "Data Governance",                    "domain_score": 2.86},
+        {"domain_id": "D3", "domain_name": "Model Development and Testing",      "domain_score": 2.71},
+        {"domain_id": "D4", "domain_name": "Transparency and Explainability",    "domain_score": 2.00},
         {"domain_id": "D5", "domain_name": "Human Oversight and Accountability", "domain_score": 2.50},
-        {"domain_id": "D6", "domain_name": "Monitoring and Incident Response", "domain_score": 2.10}
+        {"domain_id": "D6", "domain_name": "Monitoring and Incident Response",   "domain_score": 2.10}
     ]
 }
 
-Domain names must match the canonical taxonomy in
-control_library_v0_2_descriptors_updated.json (D1-D6).  Future domains
-(D7, D8, …) are automatically picked up — no code change needed.
 """
 
 from __future__ import annotations
@@ -52,7 +49,7 @@ class GovernanceContext:
     """
 
     governance_score:   float           # composite score, 0-5
-    governance_verdict: str             # PASS | PASS_WITH_OBSERVATIONS | CONDITIONAL_PASS | FAIL
+    governance_verdict: str             # COMPLIANT | COMPLIANT_WITH_OBSERVATIONS | CONDITIONAL_PASS | FAIL
     domain_scores: Dict[str, float] = field(default_factory=dict)
 
 

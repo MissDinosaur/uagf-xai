@@ -69,6 +69,14 @@ def test_html_report_contains_professional_sections_and_raw_evidence(
     assert "status-completed" in html
     assert "<h3>Package versions</h3>" not in html
     assert '<section id="limitations">' not in html
+    assert "Method Applicability and Skipped Evidence" not in html
+    assert '<section id="method-applicability">' not in html
+    assert "8. Raw Evidence Appendix" in html
+    assert (
+        "CBEP creates an article- and risk-driven plan and then applies task "
+        "compatibility screening. Incompatible methods are excluded to avoid "
+        "misleading or invalid evidence."
+    ) in html
 
 
 def test_report_renders_skipped_and_not_applicable_statuses(
@@ -158,6 +166,7 @@ def test_report_reorganizes_scope_resources_and_runtime_without_duplicates(
     assert "Completed methods" not in runtime
     assert "Skipped / not applicable" not in runtime
     assert "Model and Traditional ML dataset contract" not in runtime
+    assert 'class="callout limitation"><strong>Runtime measurement scope:' in runtime
 
 
 def test_llm_report_uses_professor_defined_method_names(tmp_path, monkeypatch, governance_context):
@@ -313,6 +322,23 @@ def test_report_renders_structured_dice_evidence_under_explainability(
                     "delta": -40_000,
                 }
             ],
+            "counterfactuals": [
+                {
+                    "counterfactual_id": 1,
+                    "counterfactual_prediction": 0,
+                    "number_of_changed_features": 1,
+                    "changed_features": [{"feature": "income"}],
+                },
+                {
+                    "counterfactual_id": 2,
+                    "counterfactual_prediction": 0,
+                    "number_of_changed_features": 2,
+                    "changed_features": [
+                        {"feature": "income"},
+                        {"feature": "duration"},
+                    ],
+                },
+            ],
         },
         artifacts=["outputs/dice/test_counterfactuals.json"],
         limitations=["Domain review is required."],
@@ -336,8 +362,60 @@ def test_report_renders_structured_dice_evidence_under_explainability(
     assert "Original Prediction" in html
     assert "Desired Class" in html
     assert "Changed Features Count" in html
+    assert "1 (label meaning unavailable)" in html
+    assert "0 (label meaning unavailable)" in html
+    assert (
+        "The table below shows the first generated counterfactual. The full "
+        "structured JSON artifact contains all generated counterfactuals."
+    ) in html
     assert "<th>Feature</th>" in html
     assert "<th>Original value</th>" in html
     assert "<th>Counterfactual value</th>" in html
+    assert "All generated counterfactuals" in html
+    assert "<th>Counterfactual ID</th>" in html
+    assert "<th>Prediction</th>" in html
+    assert "<th>Changed features count</th>" in html
+    assert "<th>Changed feature names</th>" in html
+    assert "income, duration" in html
     assert "Open full structured DiCE JSON artifact" in html
     assert "Counterfactual · Counterfactual explanation" not in html
+
+
+def test_report_uses_explicit_prediction_label_mapping_when_available(
+    tmp_path, monkeypatch, traditional_audit_context, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    traditional_audit_context.prediction_label_mapping = {
+        0: "good credit risk",
+        1: "bad credit risk",
+    }
+    result = completed_evidence(
+        evidence_id="EXP-DICE",
+        layer="explainability",
+        method="DiCE",
+        article_mapping=["Art. 13"],
+        summary="Structured counterfactual explanation.",
+        metrics={
+            "original_prediction": 1,
+            "counterfactual_prediction": 0,
+            "counterfactuals": [
+                {
+                    "counterfactual_id": 1,
+                    "counterfactual_prediction": 0,
+                    "changed_features": [],
+                }
+            ],
+        },
+    )
+
+    report_generator.generate_report(
+        {"counterfactual": result, "_cbep_trace": _trace(["dice"])},
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "1 (bad credit risk)" in html
+    assert "0 (good credit risk)" in html

@@ -137,6 +137,12 @@ def test_report_sections_use_one_central_order_for_shuffled_results(
     ) in coverage
     assert '<span class="method-group-title">Explainability Evidence</span>' in html
     assert "<ul class=\"method-group-items\"><li>" in html
+    assert 'class="facts-grid executive-facts-grid"' in html
+    assert ".executive-facts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }" in html
+    assert ".method-groups { margin-top: 3px; font-size: .72rem;" in html
+    assert ".method-fact { grid-column: 1 / -1;" not in html
+    assert ".method-group-items { list-style: disc;" in html
+    assert '.method-group-items li::marker { color: #111827;' in html
     raw_section = unescape(html.split('<section id="raw-evidence">', 1)[1])
     _assert_order(
         raw_section,

@@ -554,6 +554,11 @@ def build_cbep_decision_table(results, audit_context):
             "reason": reason,
         })
     return {
+        "intro": (
+            "CBEP creates an article- and risk-driven plan and then applies "
+            "task compatibility screening. Incompatible methods are excluded "
+            "to avoid misleading or invalid evidence."
+        ),
         "rows": rows,
         "base_plan": [
             METHOD_CATALOG.get(item, {"short_name": item})["short_name"]
@@ -638,6 +643,32 @@ def _fairness_feature_results(result: dict) -> list[tuple[str, dict]]:
     return list(per_feature.items()) if isinstance(per_feature, dict) else []
 
 
+def _prediction_label_meaning(value, audit_context) -> str:
+    """Return an explicit prediction-label meaning without inferring semantics."""
+    for field_name in (
+        "prediction_label_mapping",
+        "label_mapping",
+        "class_labels",
+    ):
+        mapping = _value(audit_context, field_name)
+        if isinstance(mapping, dict):
+            meaning = mapping.get(value, mapping.get(str(value)))
+            if meaning not in (None, ""):
+                return str(meaning)
+        elif isinstance(mapping, (list, tuple)):
+            try:
+                meaning = mapping[int(value)]
+            except (IndexError, TypeError, ValueError):
+                continue
+            if meaning not in (None, ""):
+                return str(meaning)
+    return "label meaning unavailable"
+
+
+def _prediction_display(value, audit_context) -> str:
+    return f"{_display(value, 'Unavailable')} ({_prediction_label_meaning(value, audit_context)})"
+
+
 def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     info = METHOD_CATALOG[token]
     status = _result_status(result)
@@ -645,6 +676,9 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     artifacts = list(result.get("artifacts") or [])
     metric_cards = []
     table = None
+    table_intro = None
+    secondary_table = None
+    secondary_table_title = None
 
     if token == "shap":
         ranked = evidence_metrics.get("feature_importance", [])
@@ -681,6 +715,10 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
             ],
         }
     elif token == "dice":
+        table_intro = (
+            "The table below shows the first generated counterfactual. The full "
+            "structured JSON artifact contains all generated counterfactuals."
+        )
         table = {
             "headers": [
                 "Feature",
@@ -702,6 +740,35 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                 for item in evidence_metrics.get("changed_features", [])
             ],
         }
+        counterfactuals = evidence_metrics.get("counterfactuals", [])
+        if counterfactuals:
+            secondary_table_title = "All generated counterfactuals"
+            secondary_table = {
+                "headers": [
+                    "Counterfactual ID",
+                    "Prediction",
+                    "Changed features count",
+                    "Changed feature names",
+                ],
+                "rows": [
+                    [
+                        item.get("counterfactual_id", index),
+                        _prediction_display(
+                            item.get("counterfactual_prediction"), audit_context
+                        ),
+                        item.get(
+                            "number_of_changed_features",
+                            len(item.get("changed_features", [])),
+                        ),
+                        ", ".join(
+                            str(change.get("feature"))
+                            for change in item.get("changed_features", [])
+                            if change.get("feature") not in (None, "")
+                        ) or "None",
+                    ]
+                    for index, item in enumerate(counterfactuals, 1)
+                ],
+            }
     elif token == "drift":
         table = {
             "headers": [
@@ -732,6 +799,11 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     for key, value in evidence_metrics.items():
         if key == "runtime_seconds" or isinstance(value, (dict, list, tuple)):
             continue
+        if token == "dice" and key in {
+            "original_prediction",
+            "counterfactual_prediction",
+        }:
+            value = _prediction_display(value, audit_context)
         metric_cards.append(
             {"label": key.replace("_", " ").title(), "value": value}
         )
@@ -757,6 +829,9 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
         "key_findings": list(result.get("key_findings") or []),
         "metrics": metric_cards,
         "table": table,
+        "table_intro": table_intro,
+        "secondary_table": secondary_table,
+        "secondary_table_title": secondary_table_title,
         "limitations": list(result.get("limitations") or []),
         "plot": plot,
         "output": output,
@@ -775,38 +850,6 @@ def build_evidence_findings(results, audit_context):
         if isinstance(result, dict) and _result_status(result) != "not_applicable":
             findings.append(build_evidence_narrative(token, result, audit_context))
     return findings
-
-
-def build_method_applicability(results, audit_context):
-    rows = []
-    selected = _selected_tokens(results)
-    for token in _candidate_tokens(results, audit_context):
-        result = _method_result(results, token)
-        if not isinstance(result, dict):
-            continue
-        status = _method_status(results, token)
-        if status == "completed":
-            continue
-        info = METHOD_CATALOG[token]
-        rows.append({
-            "method": info["name"],
-            "status": format_status_badge(status),
-            "reason": _result_limitation(token, result, status, audit_context),
-            "selected": "Yes" if token in selected else "No",
-        })
-
-    if _is_llm(audit_context):
-        context_note = (
-            "Traditional SHAP, Fairlearn, MAPIE, DiCE, and tabular Evidently methods "
-            "are not applied directly. CBEP selected the dedicated LLM evidence pathway."
-        )
-    else:
-        context_note = (
-            "CBEP creates an article- and risk-driven plan and then applies task "
-            "compatibility screening. Incompatible methods are excluded to avoid "
-            "misleading or invalid evidence."
-        )
-    return {"intro": context_note, "rows": rows}
 
 
 def build_runtime_reproducibility(
@@ -907,7 +950,6 @@ def build_report_model(
     runtime_context=None,
 ) -> dict:
     resource_summary = build_resource_summary(audit_context, resource_context)
-    applicability = build_method_applicability(results, audit_context)
     return {
         "executive_summary": build_executive_summary(
             results, audit_context, governance_context, provider_name
@@ -924,5 +966,4 @@ def build_report_model(
         "cbep_summary": build_cbep_decision_table(results, audit_context),
         "coverage_matrix": build_evidence_coverage_matrix(results, audit_context),
         "evidence_findings": build_evidence_findings(results, audit_context),
-        "applicability": applicability,
     }

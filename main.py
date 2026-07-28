@@ -7,7 +7,7 @@ Two execution paths are supported:
    - enabled with --system-type
    - uses locally runnable models and datasets
 
-2. S5-driven mode
+2. json-files-driven mode
    - omit --system-type
    - loads audit metadata from the GovernanceContext JSON and AuditContext JSON 
      and resolves resources from them

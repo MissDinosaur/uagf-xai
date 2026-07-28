@@ -76,12 +76,13 @@
     .fact { border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; background: #fbfcfe; }
     .fact-label { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
     .fact-value { display: block; margin-top: 3px; font-weight: 600; overflow-wrap: anywhere; }
-    .method-groups { margin-top: 5px; }
-    .method-group { margin: 7px 0; }
+    .executive-facts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .method-groups { margin-top: 3px; font-size: .72rem; line-height: 1.25; }
+    .method-group { margin: 5px 0; }
     .method-group-title { display: block; font-weight: 700; color: var(--navy); }
-    .method-group-items { list-style: none; margin: 2px 0 0; padding: 0; font-weight: 600; }
-    .method-group-items li { margin: 2px 0; overflow-wrap: anywhere; }
-    .method-group-items li::before { content: "— "; color: var(--muted); }
+    .method-group-items { list-style: disc; margin: 2px 0 0; padding-left: 18px; font-weight: 500; }
+    .method-group-items li { margin: 1px 0; overflow-wrap: anywhere; }
+    .method-group-items li::marker { color: #111827; font-size: .8em; }
     .callout { border-left: 4px solid var(--blue); background: #eef5ff; padding: 12px 15px; border-radius: 5px; margin: 12px 0; }
     .callout.success { border-color: var(--green); background: var(--green-bg); }
     .callout.warning { border-color: var(--amber); background: var(--amber-bg); }
@@ -132,6 +133,9 @@
       word-break: break-word;
     }
     .footer { color: var(--muted); text-align: center; font-size: .8rem; margin-top: 26px; }
+    @media (max-width: 820px) {
+      .executive-facts-grid { grid-template-columns: 1fr; }
+    }
     @page {
       size: A4;
       margin: 18mm 14mm;
@@ -177,7 +181,7 @@
     <h2>1. Executive Summary</h2>
     <p><span class="status-badge {{ report.executive_summary.overall_status.css_class }}">{{ report.executive_summary.overall_status.label }}</span></p>
     {% for paragraph in report.executive_summary.paragraphs %}<p class="lead">{{ paragraph }}</p>{% endfor %}
-    <div class="facts-grid">
+    <div class="facts-grid executive-facts-grid">
       {% for fact in report.executive_summary.facts %}
       <div class="fact">
         <span class="fact-label">{{ fact.label }}</span>
@@ -223,7 +227,7 @@
     <div class="table-wrap"><table><tbody>
       {% for row in report.resource_summary.rows %}<tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>{% endfor %}
     </tbody></table></div>
-    {% for warning in report.resource_summary.warnings %}<div class="callout warning"><strong>Resource limitation:</strong> {{ warning }}</div>{% endfor %}
+    {% for warning in report.resource_summary.warnings %}<div class="callout limitation"><strong>Resource limitation:</strong> {{ warning }}</div>{% endfor %}
   </section>
 
   <section id="runtime-reproducibility">
@@ -237,7 +241,7 @@
       </div>
       {% endfor %}
     </div>
-    <div class="callout"><strong>Runtime measurement scope:</strong> {{ report.runtime_reproducibility.measurement_scope }}</div>
+    <div class="callout limitation"><strong>Runtime measurement scope:</strong> {{ report.runtime_reproducibility.measurement_scope }}</div>
 
     <h3>Runtime per method</h3>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Status</th><th>Runtime seconds</th></tr></thead><tbody>
@@ -255,6 +259,7 @@
   <section id="cbep-planning">
     <h2>5. CBEP Evidence Planning Summary</h2>
     <p>CBEP selects a minimum sufficient evidence set from risk tier, applicable EU AI Act articles, governance priorities, CSP state, and task-method compatibility.</p>
+    <p>{{ report.cbep_summary.intro }}</p>
     {% if report.cbep_summary.governance_adjustments %}<div class="callout"><strong>Governance adjustments:</strong> {{ report.cbep_summary.governance_adjustments | join("; ") }}</div>{% endif %}
     {% if report.cbep_summary.csp_adjustments %}<div class="callout warning"><strong>CSP planning note:</strong> {{ report.cbep_summary.csp_adjustments | join("; ") }}</div>{% endif %}
     <div class="table-wrap"><table>
@@ -284,7 +289,10 @@
         <p>{{ finding.narrative }}</p>
         {% if finding.key_findings %}<ul>{% for item in finding.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
         {% if finding.metrics %}<div class="facts-grid">{% for metric in finding.metrics %}<div class="fact"><span class="fact-label">{{ metric.label }}</span><span class="fact-value">{{ metric.value }}</span></div>{% endfor %}</div>{% endif %}
+        {% if finding.table_intro %}<p>{{ finding.table_intro }}</p>{% endif %}
         {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
+        {% if finding.secondary_table_title %}<h3>{{ finding.secondary_table_title }}</h3>{% endif %}
+        {% if finding.secondary_table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.secondary_table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.secondary_table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.plot %}<img class="plot" src="../../{{ finding.plot }}" alt="{{ finding.method }} evidence visualization">{% endif %}
         {% if finding.output %}<p><a href="../../{{ finding.output }}">{{ finding.output_label }}</a></p>{% endif %}
         {% for limitation in finding.limitations %}<div class="callout limitation"><strong>Interpretation limitation:</strong> {{ limitation }}</div>{% endfor %}
@@ -293,18 +301,8 @@
     {% endfor %}
   </section>
 
-  <section id="method-applicability">
-    <h2>8. Method Applicability and Skipped Evidence</h2>
-    <p>{{ report.applicability.intro }}</p>
-    {% if report.applicability.rows %}
-    <div class="table-wrap"><table><thead><tr><th>Method</th><th>CBEP Selected</th><th>Status</th><th>Reason</th></tr></thead><tbody>
-      {% for row in report.applicability.rows %}<tr><td>{{ row.method }}</td><td>{{ row.selected }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.reason }}</td></tr>{% endfor %}
-    </tbody></table></div>
-    {% else %}<div class="callout success">All CBEP-selected evidence methods completed.</div>{% endif %}
-  </section>
-
   <section id="raw-evidence">
-    <h2>9. Raw Evidence Appendix</h2>
+    <h2>8. Raw Evidence Appendix</h2>
     <p>The complete machine-readable evidence is preserved below for reproducibility and audit traceability.</p>
     {% for section in sections %}
     <details>

@@ -68,9 +68,7 @@ class ResourceLoader:
                 guardrail_config=llm_resources["guardrail_config"],
             )
 
-        train_df, eval_df = ResourceLoader.load_traditional_resources(
-            audit_context
-        )
+        train_df, eval_df = ResourceLoader.load_traditional_resources(audit_context)
         return ResourceBundle(
             model=model,
             model_metadata=model_metadata,

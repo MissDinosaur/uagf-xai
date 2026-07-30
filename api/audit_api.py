@@ -23,7 +23,7 @@ def _split_evaluation_frame(evaluation_dataset, target_column: str):
     return evaluation_dataset, None
 
 
-def _load_real_s5_resources(audit_context):
+def _load_s5_resources(audit_context):
     resources = ResourceLoader.load_bundle(audit_context)
 
     if _is_llm_contract(audit_context):
@@ -235,7 +235,7 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
     datasets are unavailable, the failure is surfaced directly to the caller.
     """
     run_started_at = time.perf_counter()
-    resource_bundle, X, y, sensitive_features = _load_real_s5_resources(audit_context)
+    resource_bundle, X, y, sensitive_features = _load_s5_resources(audit_context)
     print("Mode: real S5 resources")
 
     return audit_with_detailed_data(

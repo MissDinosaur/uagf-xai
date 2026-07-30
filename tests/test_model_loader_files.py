@@ -8,7 +8,9 @@ import pytest
 from sklearn.dummy import DummyClassifier, DummyRegressor
 
 from resources.artifact_utils import resolve_artifact_path
+from resources.llm_model_loader import LLMModelLoader
 from resources.model_loader import ModelLoader
+from resources.traditional_model_loader import TraditionalModelLoader
 
 
 @pytest.mark.parametrize(
@@ -26,6 +28,15 @@ def test_artifact_uri_resolution(uri, expected):
 def test_absolute_path_resolution_is_preserved(tmp_path):
     path = tmp_path / "model.joblib"
     assert resolve_artifact_path(str(path)) == path
+
+
+def test_specialized_loaders_have_separate_contract_detection(tmp_path):
+    model_file = tmp_path / "model.joblib"
+    model_file.touch()
+
+    assert TraditionalModelLoader.supports(model_file, "joblib", "sklearn")
+    assert not LLMModelLoader.supports("joblib", "sklearn")
+    assert LLMModelLoader.supports("model_directory", "huggingface")
 
 
 def test_single_joblib_model_is_loaded(tmp_path, model_context_factory):

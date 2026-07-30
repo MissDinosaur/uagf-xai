@@ -114,6 +114,7 @@ METHOD_TASK_COMPATIBILITY: dict[str, set[str]] = {
         "binary_classification",
         "multiclass_classification",
         "regression",
+        "forecasting",
     },
     "drift": {
         "binary_classification",

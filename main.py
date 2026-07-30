@@ -61,7 +61,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def _load_governance_context(path: str | None):
+def _load_s4_governance_context(path: str | None):
     if not path:
         return None
 
@@ -124,7 +124,7 @@ def _load_local_validation_resources(system_type: str, llm_model: str):
 
 def main():
     args = parse_args()
-    governance_context = _load_governance_context(args.s4_json)
+    governance_context = _load_s4_governance_context(args.s4_json)
 
     if args.system_type is not None:
         audit_context = _build_local_validation_audit_context(args.system_type)

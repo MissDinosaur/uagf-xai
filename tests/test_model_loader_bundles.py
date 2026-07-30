@@ -6,7 +6,13 @@ import pytest
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
 
-from resources.model_loader import EncodedSklearnModel, MetadataOnlyLLMArtifact, ModelLoader
+from resources.llm_model_loader import MetadataOnlyLLMArtifact
+from resources.model_loader import (
+    EncodedSklearnModel as FacadeEncodedSklearnModel,
+    MetadataOnlyLLMArtifact as FacadeMetadataOnlyLLMArtifact,
+    ModelLoader,
+)
+from resources.traditional_model_loader import EncodedSklearnModel
 
 
 @pytest.fixture
@@ -38,6 +44,11 @@ def test_sklearn_bundle_is_wrapped_and_predicts_raw_data(encoded_bundle):
     assert prepared["color"].tolist() == [0, 1]
     assert predictions.tolist() == [0, 1]
     assert encoded_bundle.estimator is encoded_bundle.model
+
+
+def test_model_loader_facade_preserves_legacy_wrapper_exports():
+    assert FacadeEncodedSklearnModel is EncodedSklearnModel
+    assert FacadeMetadataOnlyLLMArtifact is MetadataOnlyLLMArtifact
 
 
 def test_sklearn_bundle_exposes_predict_proba(encoded_bundle):

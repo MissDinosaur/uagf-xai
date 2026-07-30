@@ -82,7 +82,7 @@ _ANNEX_III_SECTION_MAP: dict[str, str] = {
 }
 
 
-def _normalise_article(raw: str) -> str | None:
+def _normalize_article(raw: str) -> str | None:
     m = _ARTICLE_RE.match(raw.strip())
     if m:
         return f"Art{m.group(1)}"
@@ -189,9 +189,7 @@ def _infer_system_type(
 
 
 def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
-    is_llm_or_agentic = data.get("is_llm_or_agentic") or stage_b.get(
-        "is_llm_or_agentic"
-    )
+    is_llm_or_agentic = data.get("is_llm_or_agentic") or stage_b.get("is_llm_or_agentic")
 
     model_type = _coerce_optional_text(
         data.get("model_type") or stage_b.get("model_type")
@@ -220,7 +218,7 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     compliance_matrix: dict = data.get("compliance_matrix", {})
     raw_articles: list[str] = []
     for raw_key in compliance_matrix:
-        token = _normalise_article(raw_key)
+        token = _normalize_article(raw_key)
         if token and token in _CBEP_ARTICLES:
             raw_articles.append(token)
 

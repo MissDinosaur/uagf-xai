@@ -5,38 +5,17 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 
-from layers.llm.evidence_methods import (
-    LLM_GROUNDING,
-    LLM_PROMPT_FAIRNESS,
-    LLM_SELF_CONSISTENCY,
-    LLM_SEMANTIC_DRIFT,
+from schema.method_catalog import (
+    LLM_METHOD_TOKENS,
+    RESULT_KEY_TO_TOKEN,
+    TRADITIONAL_METHOD_TOKENS,
 )
 
 
-TRADITIONAL_METHOD_ORDER = (
-    "shap",
-    "lime",
-    "dice",
-    "fairness",
-    "uncertainty",
-    "drift",
-)
-
-LLM_METHOD_ORDER = (
-    LLM_GROUNDING,
-    LLM_SELF_CONSISTENCY,
-    LLM_SEMANTIC_DRIFT,
-    LLM_PROMPT_FAIRNESS,
-)
-
+TRADITIONAL_METHOD_ORDER = TRADITIONAL_METHOD_TOKENS
+LLM_METHOD_ORDER = LLM_METHOD_TOKENS
 METHOD_TO_RESULT_KEY = {
-    "shap": "explainability",
-    "lime": "lime",
-    "dice": "counterfactual",
-    "fairness": "fairness",
-    "uncertainty": "uncertainty",
-    "drift": "drift",
-    **{token: token for token in LLM_METHOD_ORDER},
+    token: result_key for result_key, token in RESULT_KEY_TO_TOKEN.items()
 }
 
 

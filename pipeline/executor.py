@@ -121,7 +121,7 @@ def execute(
     X,
     y,
     methods,
-    system_type="traditional",
+    system_type="traditional_ml",
     sensitive_features=None,
     provider_name=None,
     output_namespace="audit",
@@ -231,7 +231,12 @@ def execute(
 
     if "uncertainty" in methods:
         results["uncertainty"], runtimes["uncertainty"] = _timed_call(
-            lambda: run_uncertainty(model, X_raw, y)
+            lambda: run_uncertainty(
+                model,
+                X_raw,
+                y,
+                task_type=task_type,
+            )
         )
 
     if "drift" in methods:

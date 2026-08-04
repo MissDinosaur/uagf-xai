@@ -87,8 +87,9 @@ def test_metadata_only_huggingface_folder_returns_structured_artifact(
         (source / filename).write_text("{}", encoding="utf-8")
     context = model_context_factory(
         model_artifact_uri=str(directory),
-        model_format="model_directory",
-        model_framework="huggingface",
+        model_artifact_kind="directory",
+        model_format="huggingface_pretrained",
+        model_framework="huggingface_transformers",
         model_type="llm_rag_model",
         model_entrypoint="stub",
         system_type="agentic",

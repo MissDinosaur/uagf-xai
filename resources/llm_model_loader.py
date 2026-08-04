@@ -36,8 +36,12 @@ class MetadataOnlyLLMArtifact:
 class LLMModelLoader:
     """Load local HuggingFace LLM artifacts and their tokenizers."""
 
-    LLM_FORMATS = frozenset({"huggingface", "hf"})
-    LLM_FRAMEWORKS = frozenset({"huggingface", "transformers"})
+    LLM_FORMATS = frozenset(
+        {"huggingface", "hf", "huggingface_pretrained", "huggingface_adapter"}
+    )
+    LLM_FRAMEWORKS = frozenset(
+        {"huggingface", "transformers", "huggingface_transformers"}
+    )
 
     @classmethod
     def supports(cls, model_format: str, model_framework: str) -> bool:

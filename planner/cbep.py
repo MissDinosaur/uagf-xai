@@ -1,43 +1,12 @@
-﻿"""
-Constraint-Based Evidence Planner (CBEP)  —  UAGF-XAI / S6  v3.0
-==================================================================
-Selects the *minimum sufficient* set of evidence methods by combining
-two typed inputs from upstream UAGF platform stages:
+"""Deterministic Constraint-Based Evidence Planner (CBEP).
 
-  GovernanceContext (S4 / UAGF-GMM / CGSA)
-      Overall governance maturity score and per-domain scores (0-5 scale).
-      Low scores drive priority-promotion of related evidence methods.
+CBEP is inspired by constraint satisfaction problem (CSP) theory and
+operationalizes evidence selection as a deterministic, constraint-informed
+planning procedure. It applies explicit regulatory, governance, system-type,
+and task-compatibility constraints to select a minimum sufficient evidence set.
 
-  AuditContext (S5 / UAGF-TAM / AAA)
-      EU AI Act applicable articles, risk tier, system modality, and CSP
-      satisfiability.  Articles directly select evidence methods.
-
-Planning algorithm
-------------------
-1. Base plan     -- minimum method set for the declared risk tier.
-2. Article plan  -- method set derived from applicable EU AI Act articles.
-3. Merge         -- ordered union of base + article methods.
-4. Gov. priority -- transparency_score < 2.5  -> explainability promoted to
-                    front of queue; monitoring_score < 2.5 -> drift promoted.
-5. CSP sweep     -- if audit.csp_satisfied == False, add full method
-                    sweep (all available methods for the modality branch).
-
-EU AI Act article -> evidence method mapping
---------------------------------------------
-  Art. 9   risk management system        -> uncertainty (MAPIE)
-  Art. 10  data governance / fairness    -> fairness (Fairlearn)
-  Art. 13  transparency / explainability -> shap, lime, dice
-  Art. 14  human oversight               -> uncertainty
-  Art. 15  robustness & accuracy         -> uncertainty, drift
-  Art. 61  post-market monitoring        -> drift (Evidently)
-
-LLM / agentic equivalents use the llm_ prefixed method tokens.
-
-Public API
-----------
-  plan_evidence(audit, governance)             -> (methods, trace)   [primary]
-  select_methods_with_trace(risk_level, ...)   -> (methods, trace)   [compat]
-  select_methods(risk_level, ...)              -> methods             [compat]
+The implementation does not claim to use a generic CSP solver. ``csp_satisfied``
+is an upstream S5 audit-status signal that can broaden the evidence sweep.
 """
 
 from __future__ import annotations
@@ -52,102 +21,55 @@ from layers.llm.evidence_methods import (
     LLM_SEMANTIC_DRIFT,
     llm_method_display_name,
 )
+from schema.method_catalog import (
+    CATALOG_VERSION,
+    LLM_METHOD_TOKENS,
+    METHOD_CATALOG,
+    METHOD_TASK_COMPATIBILITY,
+    TRADITIONAL_METHOD_TOKENS,
+    article_method_map,
+)
 
 if TYPE_CHECKING:
     from adapters.s4_governance_adapter import GovernanceContext
     from adapters.s5_audit_adapter import AuditContext
 
 
-# ---------------------------------------------------------------------------
-# Lookup tables: article -> method tokens
-# ---------------------------------------------------------------------------
+_S5_ARTICLE_TRAD = article_method_map("traditional")
+_S5_ARTICLE_LLM = article_method_map("llm")
 
-_S5_ARTICLE_TRAD: dict[str, list[str]] = {
-    "Art9":  ["uncertainty"],
-    "Art10": ["fairness"],
-    "Art13": ["shap", "lime", "dice"],
-    "Art14": ["uncertainty"],
-    "Art15": ["uncertainty", "drift"],
-    "Art61": ["drift"],
-}
-
-_S5_ARTICLE_LLM: dict[str, list[str]] = {
-    "Art9":  [LLM_SELF_CONSISTENCY],
-    "Art10": [LLM_PROMPT_FAIRNESS],
-    "Art13": [LLM_GROUNDING],
-    "Art14": [LLM_SELF_CONSISTENCY],
-    "Art15": [LLM_SELF_CONSISTENCY, LLM_SEMANTIC_DRIFT],
-    "Art61": [LLM_SEMANTIC_DRIFT],
-}
-
-_ALL_TRAD = ["shap", "lime", "fairness", "uncertainty", "drift", "dice"]
-_ALL_LLM = LLM_METHOD_ORDER
-
+_ALL_TRAD = list(TRADITIONAL_METHOD_TOKENS)
+_ALL_LLM = list(LLM_METHOD_TOKENS)
 _EXPLAINABILITY_TRAD = ["shap", "lime", "dice"]
-_EXPLAINABILITY_LLM  = [LLM_GROUNDING]
-_DRIFT_TRAD          = ["drift"]
-_DRIFT_LLM           = [LLM_SEMANTIC_DRIFT]
+_EXPLAINABILITY_LLM = [LLM_GROUNDING]
+_DRIFT_TRAD = ["drift"]
+_DRIFT_LLM = [LLM_SEMANTIC_DRIFT]
 
-METHOD_TASK_COMPATIBILITY: dict[str, set[str]] = {
-    "shap": {
-        "binary_classification",
-        "multiclass_classification",
-        "regression",
-        "forecasting",
-        "anomaly_detection",
-    },
-    "lime": {
-        "binary_classification",
-        "multiclass_classification",
-        "regression",
-    },
-    "dice": {
-        "binary_classification",
-        "multiclass_classification",
-        "regression",
-    },
-    "fairness": {
-        "binary_classification",
-        "multiclass_classification",
-    },
-    "uncertainty": {
-        "binary_classification",
-        "multiclass_classification",
-        "regression",
-        "forecasting",
-    },
-    "drift": {
-        "binary_classification",
-        "multiclass_classification",
-        "regression",
-        "forecasting",
-        "anomaly_detection",
-    },
-}
-
-_PRIORITY_THRESHOLD       = 2.5
+_PRIORITY_THRESHOLD = 2.5
 _LOW_GOVERNANCE_THRESHOLD = 2.5
+_DOMAIN_KEY_TRANSPARENCY = "transparency"
+_DOMAIN_KEY_MONITORING = "monitoring"
 
-# Domain name keywords used for governance-driven priority promotion.
-# These are case-insensitive substrings of the canonical domain_name strings
-# defined in control_library_v0_2_descriptors_updated.json.
-_DOMAIN_KEY_TRANSPARENCY = "transparency"   # D4: Transparency and Explainability
-_DOMAIN_KEY_MONITORING   = "monitoring"     # D6: Monitoring and Incident Response
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 def _ordered_union(*lists: list) -> list:
-    seen: set = set()
-    result: list = []
-    for lst in lists:
-        for item in lst:
+    seen = set()
+    result = []
+    for values in lists:
+        for item in values:
             if item not in seen:
                 seen.add(item)
                 result.append(item)
     return result
+
+
+def _catalog_order(methods: list[str], is_llm: bool) -> list[str]:
+    preferred = _ALL_LLM if is_llm else _ALL_TRAD
+    rank = {token: index for index, token in enumerate(preferred)}
+    original = {token: index for index, token in enumerate(methods)}
+    return sorted(
+        methods,
+        key=lambda token: (rank.get(token, len(rank)), original[token]),
+    )
 
 
 def _get_domain_score(
@@ -155,15 +77,10 @@ def _get_domain_score(
     keyword: str,
     default: float = 5.0,
 ) -> float:
-    """
-    Find a domain score by case-insensitive keyword substring match.
-
-    Returns ``default`` (5.0) when no matching domain is found, ensuring
-    that missing domains never trigger unintended priority-promotion.
-    """
-    kw = keyword.lower()
+    """Return the domain score matching a case-insensitive name fragment."""
+    keyword = keyword.lower()
     for name, score in domain_scores.items():
-        if kw in name.lower():
+        if keyword in name.lower():
             return float(score)
     return default
 
@@ -178,7 +95,7 @@ def _base_plan(risk_tier: str, is_llm: bool) -> list[str]:
     return {
         "minimal": ["shap"],
         "limited": ["shap", "fairness"],
-        "high":    ["shap", "fairness", "uncertainty", "drift"],
+        "high": ["shap", "fairness", "uncertainty", "drift"],
     }.get(risk_tier, [])
 
 
@@ -190,26 +107,26 @@ def _apply_task_compatibility_assessment(
     methods: list[str],
     task_type: str,
 ) -> tuple[list[str], dict]:
-    task_type_normalized = _normalize_task_type(task_type)
-    compatible_methods: list[str] = []
-    incompatible_methods: list[str] = []
+    normalized_task = _normalize_task_type(task_type)
+    compatible = []
+    incompatible = []
 
     for method in methods:
         allowed_tasks = METHOD_TASK_COMPATIBILITY.get(method)
-        if allowed_tasks is None or task_type_normalized in allowed_tasks:
-            compatible_methods.append(method)
+        if allowed_tasks is None or normalized_task in allowed_tasks:
+            compatible.append(method)
         else:
-            incompatible_methods.append(method)
+            incompatible.append(method)
 
-    return compatible_methods, {
+    return compatible, {
         "status": "applied",
-        "task_type": task_type_normalized,
+        "task_type": normalized_task,
         "assessment_policy": "task-method compatibility screening",
-        "compatible_methods": compatible_methods,
-        "incompatible_methods": incompatible_methods,
-        "compatible_count": len(compatible_methods),
-        "incompatible_count": len(incompatible_methods),
-        "compatibility_map_version": "v1",
+        "compatible_methods": compatible,
+        "incompatible_methods": incompatible,
+        "compatible_count": len(compatible),
+        "incompatible_count": len(incompatible),
+        "compatibility_map_version": CATALOG_VERSION,
         "note": (
             "Methods incompatible with the current task type were excluded "
             "after CBEP planning."
@@ -217,164 +134,176 @@ def _apply_task_compatibility_assessment(
     }
 
 
-# ---------------------------------------------------------------------------
-# Primary public API  -- DTO-based
-# ---------------------------------------------------------------------------
+def _method_decisions(
+    methods: list[str],
+    compatibility_trace: dict,
+    task_type: str,
+    is_llm: bool,
+) -> list[dict]:
+    incompatible = set(compatibility_trace.get("incompatible_methods", []))
+    decisions = []
+    for token in (_ALL_LLM if is_llm else _ALL_TRAD):
+        if token in methods:
+            status = "selected"
+            reason = "Required by the merged plan and compatible with the task."
+        elif token in incompatible:
+            status = "incompatible_filtered"
+            reason = (
+                f"Excluded because {token} is not compatible with task type "
+                f"{task_type}."
+            )
+        else:
+            status = "not_required"
+            reason = "Not required by the minimum-sufficient merged plan."
+        decisions.append(
+            {
+                "method": token,
+                "display_name": METHOD_CATALOG[token].display_name,
+                "status": status,
+                "reason": reason,
+            }
+        )
+    return decisions
 
-def plan_evidence(
-    audit,
-    governance=None,
-) -> tuple[list[str], dict]:
-    """
-    Select the minimum sufficient evidence method set.
 
-    Parameters
-    ----------
-    audit      : AuditContext DTO from S5 / AuditAdapter.
-    governance : GovernanceContext DTO from S4 / GovernanceAdapter.
-                 Optional; when absent no governance-driven adjustments apply.
-
-    Returns
-    -------
-    (methods, trace)
-    """
+def plan_evidence(audit, governance=None) -> tuple[list[str], dict]:
+    """Select a minimum sufficient method set and return its audit trace."""
     is_llm = str(getattr(audit, "system_type", "")).strip().lower() in {
         "llm",
         "agentic",
     }
     task_type = _normalize_task_type(getattr(audit, "task_type", ""))
 
-    # Step 1: base plan
+    # Step 1: risk-tier base plan.
     base = _base_plan(audit.risk_tier, is_llm)
 
-    # Step 2: article-driven methods
+    # Step 2: EU AI Act article mapping.
     article_map = _S5_ARTICLE_LLM if is_llm else _S5_ARTICLE_TRAD
-    article_methods: list[str] = []
-    articles_matched: list[str] = []
-
+    article_methods = []
+    articles_matched = []
     for article in audit.applicable_articles:
         mapped = article_map.get(article, [])
         if mapped:
             articles_matched.append(article)
             article_methods.extend(mapped)
-
     methods = _ordered_union(base, article_methods)
 
-    # Step 3: governance-driven adjustments
-    gov_adjustments: list[str] = []
-
+    # Step 3: governance-priority adjustments.
+    governance_adjustments = []
     if governance is None:
-        gov_trace: dict = {"status": "not_provided"}
+        governance_trace = {"status": "not_provided"}
     else:
         if governance.governance_score < _LOW_GOVERNANCE_THRESHOLD:
-            sweep = _ALL_LLM if is_llm else _ALL_TRAD
-            methods = _ordered_union(methods, sweep)
-            gov_adjustments.append(
+            methods = _ordered_union(methods, _ALL_LLM if is_llm else _ALL_TRAD)
+            governance_adjustments.append(
                 f"governance_score={governance.governance_score:.2f} < "
                 f"{_LOW_GOVERNANCE_THRESHOLD} -> full evidence sweep"
             )
 
         transparency = _get_domain_score(
-            governance.domain_scores, _DOMAIN_KEY_TRANSPARENCY
+            governance.domain_scores,
+            _DOMAIN_KEY_TRANSPARENCY,
         )
         if transparency < _PRIORITY_THRESHOLD:
-            expl = _EXPLAINABILITY_LLM if is_llm else _EXPLAINABILITY_TRAD
-            methods = _ordered_union(expl, methods)
-            gov_adjustments.append(
-                f"{_DOMAIN_KEY_TRANSPARENCY}_score={transparency:.2f} < "
+            promoted = _EXPLAINABILITY_LLM if is_llm else _EXPLAINABILITY_TRAD
+            methods = _ordered_union(promoted, methods)
+            governance_adjustments.append(
+                f"transparency_score={transparency:.2f} < "
                 f"{_PRIORITY_THRESHOLD} -> explainability promoted"
             )
 
         monitoring = _get_domain_score(
-            governance.domain_scores, _DOMAIN_KEY_MONITORING
+            governance.domain_scores,
+            _DOMAIN_KEY_MONITORING,
         )
         if monitoring < _PRIORITY_THRESHOLD:
-            drift = _DRIFT_LLM if is_llm else _DRIFT_TRAD
-            methods = _ordered_union(drift, methods)
-            gov_adjustments.append(
-                f"{_DOMAIN_KEY_MONITORING}_score={monitoring:.2f} < "
+            promoted = _DRIFT_LLM if is_llm else _DRIFT_TRAD
+            methods = _ordered_union(promoted, methods)
+            governance_adjustments.append(
+                f"monitoring_score={monitoring:.2f} < "
                 f"{_PRIORITY_THRESHOLD} -> drift promoted"
             )
 
-        gov_trace = {
-            "status":             "applied",
-            "governance_score":   governance.governance_score,
+        governance_trace = {
+            "status": "applied",
+            "governance_score": governance.governance_score,
             "governance_verdict": governance.governance_verdict,
-            "domain_scores":      governance.domain_scores,
-            "adjustments":        gov_adjustments,
+            "domain_scores": governance.domain_scores,
+            "adjustments": governance_adjustments,
         }
 
-    # Step 4: CSP-driven extended sweep
-    csp_adjustments: list[str] = []
+    # Step 4: use the upstream S5 CSP status as an audit signal.
+    csp_adjustments = []
     if not audit.csp_satisfied:
-        sweep = _ALL_LLM if is_llm else _ALL_TRAD
-        methods = _ordered_union(methods, sweep)
+        methods = _ordered_union(methods, _ALL_LLM if is_llm else _ALL_TRAD)
         csp_adjustments.append(
             "csp_satisfied=False -> extended evidence sweep enabled"
         )
 
-    # Step 5: task-compatibility filtering
-    task_compatibility_trace: dict
+    # Step 5: task-method compatibility screening.
     if is_llm:
-        task_compatibility_trace = {
-            "status": "not_applied",
-            "reason": "llm_path_uses_llm_specific_methods",
+        compatibility_trace = {
+            "status": "applied",
             "task_type": task_type,
-            "assessment_policy": "task-method compatibility screening",
-            "compatible_methods": methods,
+            "assessment_policy": "LLM pathway compatibility screening",
+            "compatible_methods": list(methods),
             "incompatible_methods": [],
             "compatible_count": len(methods),
             "incompatible_count": 0,
-            "compatibility_map_version": "v1",
-            "note": (
-                "Compatibility assessment is bypassed for LLM-specific "
-                "evidence methods."
-            ),
+            "compatibility_map_version": CATALOG_VERSION,
+            "note": "The selected methods belong to the LLM evidence pathway.",
         }
     else:
-        methods, task_compatibility_trace = _apply_task_compatibility_assessment(
+        methods, compatibility_trace = _apply_task_compatibility_assessment(
             methods,
             task_type,
         )
 
+    # Step 6: stable catalogue order for execution and reporting.
+    methods = _catalog_order(methods, is_llm)
+    compatibility_trace["compatible_methods"] = list(methods)
+
     trace = {
-        "cbep_version":            "3.0",
-        "system_type":             audit.system_type,
-        "task_type":               task_type,
-        "modality":                audit.modality,
-        "risk_tier":               audit.risk_tier,
-        "application_domain":      audit.application_domain,
-        "applicable_articles":     audit.applicable_articles,
-        "articles_matched":        articles_matched,
+        "cbep_version": "3.1",
+        "planning_model": "deterministic_constraint_informed",
+        "method_catalog_version": CATALOG_VERSION,
+        "system_type": audit.system_type,
+        "task_type": task_type,
+        "modality": audit.modality,
+        "risk_tier": audit.risk_tier,
+        "application_domain": audit.application_domain,
+        "applicable_articles": audit.applicable_articles,
+        "articles_matched": articles_matched,
         "blocking_findings_count": len(audit.blocking_findings),
-        "csp_satisfied":           audit.csp_satisfied,
-        "csp_adjustments":         csp_adjustments,
-        "base_plan":               base,
-        "article_plan":            list(dict.fromkeys(article_methods)),
-        "governance_context":      gov_trace,
-        "task_compatibility_assessment": task_compatibility_trace,
-        "final_plan":              methods,
+        "csp_satisfied": audit.csp_satisfied,
+        "csp_adjustments": csp_adjustments,
+        "base_plan": base,
+        "article_plan": list(dict.fromkeys(article_methods)),
+        "governance_context": governance_trace,
+        "task_compatibility_assessment": compatibility_trace,
+        "method_decisions": _method_decisions(
+            methods,
+            compatibility_trace,
+            task_type,
+            is_llm,
+        ),
+        "final_plan": methods,
         "final_plan_display_names": [
             llm_method_display_name(method) for method in methods
-        ] if is_llm else methods,
+        ] if is_llm else [METHOD_CATALOG[method].display_name for method in methods],
     }
-
     return methods, trace
 
 
-# ---------------------------------------------------------------------------
-# Backward-compatible wrappers  -- accept raw dicts, create DTOs internally
-# ---------------------------------------------------------------------------
-
 def select_methods_with_trace(
-    risk_level:  str,
-    system_type: str       = "traditional",
-    s4_json:     dict | None = None,
-    s5_json:     dict | None = None,
+    risk_level: str,
+    system_type: str = "traditional_ml",
+    s4_json: dict | None = None,
+    s5_json: dict | None = None,
 ) -> tuple[list[str], dict]:
-    """Backward-compatible wrapper around plan_evidence."""
-    from adapters.s5_audit_adapter import AuditAdapter, AuditContext
+    """Backward-compatible dictionary-input wrapper around ``plan_evidence``."""
     from adapters.s4_governance_adapter import GovernanceAdapter
+    from adapters.s5_audit_adapter import AuditAdapter, AuditContext
 
     if s5_json:
         audit = AuditAdapter.from_audit_report(s5_json)
@@ -386,20 +315,21 @@ def select_methods_with_trace(
             risk_tier=risk_level,
             applicable_articles=[],
         )
-
-    governance = (
-        GovernanceAdapter.from_cgsa_report(s4_json) if s4_json else None
-    )
-
+    governance = GovernanceAdapter.from_cgsa_report(s4_json) if s4_json else None
     return plan_evidence(audit, governance)
 
 
 def select_methods(
-    risk_level:  str,
-    system_type: str       = "traditional",
-    s4_json:     dict | None = None,
-    s5_json:     dict | None = None,
+    risk_level: str,
+    system_type: str = "traditional_ml",
+    s4_json: dict | None = None,
+    s5_json: dict | None = None,
 ) -> list[str]:
-    """Return only the method list.  Backward-compatible wrapper."""
-    methods, _ = select_methods_with_trace(risk_level, system_type, s4_json, s5_json)
+    """Return only the planned method tokens for legacy callers."""
+    methods, _ = select_methods_with_trace(
+        risk_level,
+        system_type,
+        s4_json,
+        s5_json,
+    )
     return methods

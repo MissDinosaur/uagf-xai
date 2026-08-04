@@ -4,113 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from layers.llm.evidence_methods import (
-    LLM_GROUNDING,
-    LLM_PROMPT_FAIRNESS,
-    LLM_SELF_CONSISTENCY,
-    LLM_SEMANTIC_DRIFT,
-)
 from report.method_ordering import (
     LLM_METHOD_ORDER,
     TRADITIONAL_METHOD_ORDER,
     ordered_method_tokens,
     ordered_result_keys,
 )
-from report.method_titles import report_method_title
 from report.runtime_metadata import infer_record_count
+from schema.method_catalog import METHOD_CATALOG as CANONICAL_METHOD_CATALOG
 
 
 METHOD_CATALOG = {
-    "shap": {
-        "name": report_method_title("shap"),
-        "short_name": "SHAP",
-        "executive_item": "SHAP: Feature Attribution",
-        "layer": "Explainability",
-        "evidence_type": "Feature attribution",
-        "articles": "Art. 13",
-        "result_key": "explainability",
-    },
-    "lime": {
-        "name": report_method_title("lime"),
-        "short_name": "LIME",
-        "executive_item": "LIME: Local Explanation",
-        "layer": "Explainability",
-        "evidence_type": "Local surrogate explanation",
-        "articles": "Art. 13",
-        "result_key": "lime",
-    },
-    "dice": {
-        "name": report_method_title("dice"),
-        "short_name": "DiCE",
-        "executive_item": "DiCE: Counterfactual Explanation",
-        "layer": "Explainability",
-        "evidence_type": "Counterfactual explanation",
-        "articles": "Art. 13",
-        "result_key": "counterfactual",
-    },
-    "fairness": {
-        "name": report_method_title("fairness"),
-        "short_name": "Fairlearn",
-        "executive_item": "Fairlearn",
-        "layer": "Fairness",
-        "evidence_type": "Group fairness metrics",
-        "articles": "Art. 10",
-        "result_key": "fairness",
-    },
-    "uncertainty": {
-        "name": report_method_title("uncertainty"),
-        "short_name": "MAPIE",
-        "executive_item": "MAPIE",
-        "layer": "Uncertainty",
-        "evidence_type": "Conformal prediction",
-        "articles": "Art. 14 / Art. 15",
-        "result_key": "uncertainty",
-    },
-    "drift": {
-        "name": report_method_title("drift"),
-        "short_name": "Evidently",
-        "executive_item": "Evidently + Feature Drift Tests",
-        "layer": "Drift",
-        "evidence_type": "Dataset / feature drift",
-        "articles": "Art. 15 / Art. 61",
-        "result_key": "drift",
-    },
-    LLM_GROUNDING: {
-        "name": report_method_title(LLM_GROUNDING),
-        "short_name": report_method_title(LLM_GROUNDING),
-        "executive_item": report_method_title(LLM_GROUNDING),
-        "layer": "LLM Grounding",
-        "evidence_type": "Grounding evaluation",
-        "articles": "Art. 13",
-        "result_key": LLM_GROUNDING,
-    },
-    LLM_SELF_CONSISTENCY: {
-        "name": report_method_title(LLM_SELF_CONSISTENCY),
-        "short_name": report_method_title(LLM_SELF_CONSISTENCY),
-        "executive_item": report_method_title(LLM_SELF_CONSISTENCY),
-        "layer": "LLM Uncertainty",
-        "evidence_type": "Self-consistency evaluation",
-        "articles": "Art. 15",
-        "result_key": LLM_SELF_CONSISTENCY,
-    },
-    LLM_SEMANTIC_DRIFT: {
-        "name": report_method_title(LLM_SEMANTIC_DRIFT),
-        "short_name": report_method_title(LLM_SEMANTIC_DRIFT),
-        "executive_item": report_method_title(LLM_SEMANTIC_DRIFT),
-        "layer": "LLM Drift",
-        "evidence_type": "Semantic drift evaluation",
-        "articles": "Art. 61",
-        "result_key": LLM_SEMANTIC_DRIFT,
-    },
-    LLM_PROMPT_FAIRNESS: {
-        "name": report_method_title(LLM_PROMPT_FAIRNESS),
-        "short_name": report_method_title(LLM_PROMPT_FAIRNESS),
-        "executive_item": report_method_title(LLM_PROMPT_FAIRNESS),
-        "layer": "LLM Fairness",
-        "evidence_type": "Differential prompt fairness",
-        "articles": "Art. 10",
-        "result_key": LLM_PROMPT_FAIRNESS,
-    },
+    token: {
+        "name": details.display_name,
+        "short_name": details.short_name,
+        "executive_item": details.executive_item,
+        "layer": details.report_layer,
+        "evidence_type": details.report_evidence_type,
+        "articles": " / ".join(details.articles),
+        "result_key": details.result_key,
+        "requirements": list(details.requirements),
+    }
+    for token, details in CANONICAL_METHOD_CATALOG.items()
 }
 
 RESULT_KEY_TO_TOKEN = {
@@ -244,8 +159,7 @@ def _layer_display(value):
 
 def _is_llm(audit_context) -> bool:
     system_type = str(_value(audit_context, "system_type", "") or "").lower()
-    task_type = str(_value(audit_context, "task_type", "") or "").lower()
-    return system_type in {"llm", "agentic"} or task_type == "llm_generation"
+    return system_type in {"llm", "agentic"}
 
 
 def _trace(results: dict) -> dict:
@@ -332,7 +246,6 @@ def _compatibility_reason(token: str, task_type: str) -> str:
             "fairness": "Forecasting is not a group classification task in the current implementation.",
             "dice": "The current counterfactual runner targets classification or regression estimators, not this forecasting wrapper.",
             "lime": "The current LIME pathway is not enabled for forecasting.",
-            "uncertainty": "The current MAPIE runner does not support the forecasting wrapper.",
         }
         return reasons.get(token, f"The method is not compatible with {task}.")
     if task == "anomaly_detection":
@@ -454,7 +367,7 @@ def build_resource_summary(audit_context, resource_context):
     if not artifact_kind:
         if status == "metadata_only":
             artifact_kind = "Metadata-only LLM model folder"
-        elif _value(audit_context, "model_format") == "model_directory":
+        elif _value(audit_context, "model_artifact_kind") == "directory":
             artifact_kind = "Model directory"
         else:
             artifact_kind = "Single model file"
@@ -486,6 +399,10 @@ def build_resource_summary(audit_context, resource_context):
     rows = [
         {"label": "Artifact type", "value": artifact_kind},
         {"label": "Artifact URI", "value": _display(_value(audit_context, "model_artifact_uri"))},
+        {
+            "label": "Artifact kind",
+            "value": _display(_value(audit_context, "model_artifact_kind")),
+        },
         {"label": "Resolved model path", "value": _display(_web_path(context.get("resolved_path")))},
         {"label": "Model format", "value": _display(_value(audit_context, "model_format"))},
         {"label": "Model framework", "value": _display(_value(audit_context, "model_framework"))},
@@ -553,12 +470,29 @@ def build_cbep_decision_table(results, audit_context):
             "selected": "Yes" if token in selected else "No",
             "reason": reason,
         })
+    intro = (
+        "CBEP is a deterministic, constraint-informed planning procedure inspired "
+        "by CSP theory. It creates an article-, governance-, system-, and risk-driven "
+        "plan and then applies task compatibility screening. Incompatible methods "
+        "are excluded to avoid misleading or invalid evidence."
+    )
+    if task_type in {"forecasting", "anomaly_detection"}:
+        intro += (
+            " CBEP evaluated the traditional evidence library, but task-compatibility "
+            "screening excluded methods that are not valid for the current task type."
+        )
+    if task_type == "anomaly_detection":
+        selected_names = _natural_join(
+            [METHOD_CATALOG[token]["short_name"] for token in selected]
+        )
+        intro += (
+            f" For anomaly detection, the current minimum-sufficient plan selected "
+            f"{selected_names or 'no executable methods'}; classification fairness, conformal class prediction "
+            "sets, LIME, and DiCE are reported as non-applicable rather than as "
+            "planning failures."
+        )
     return {
-        "intro": (
-            "CBEP creates an article- and risk-driven plan and then applies "
-            "task compatibility screening. Incompatible methods are excluded "
-            "to avoid misleading or invalid evidence."
-        ),
+        "intro": intro,
         "rows": rows,
         "base_plan": [
             METHOD_CATALOG.get(item, {"short_name": item})["short_name"]

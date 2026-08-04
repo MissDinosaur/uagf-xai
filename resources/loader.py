@@ -29,8 +29,7 @@ class ResourceLoader:
     @staticmethod
     def _is_llm_contract(audit_context) -> bool:
         system_type = str(getattr(audit_context, "system_type", "") or "").strip().lower()
-        task_type = str(getattr(audit_context, "task_type", "") or "").strip().lower()
-        return task_type == "llm_generation" or system_type in {"llm", "agentic"}
+        return system_type in {"llm", "agentic"}
 
     @staticmethod
     def load_traditional_resources(audit_context):

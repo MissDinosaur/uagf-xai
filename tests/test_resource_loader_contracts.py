@@ -28,7 +28,7 @@ def test_traditional_contract_loads_training_and_evaluation_csvs(tmp_path, monke
     train.to_csv(train_path, index=False)
     evaluation.to_csv(evaluation_path, index=False)
     context = AuditContext(
-        system_type="traditional",
+        system_type="traditional_ml",
         task_type="binary_classification",
         training_dataset_uri=f"file://{train_path}",
         evaluation_dataset_uri=f"file://{evaluation_path}",
@@ -82,3 +82,12 @@ def test_llm_contract_without_golden_set_does_not_require_tabular_data(monkeypat
     assert bundle.golden_dataset is None
     assert bundle.training_dataset is None
     assert bundle.evaluation_dataset is None
+
+
+def test_system_type_is_authoritative_for_resource_contract_selection():
+    context = AuditContext(
+        system_type="traditional_ml",
+        task_type="llm_generation",
+    )
+
+    assert ResourceLoader._is_llm_contract(context) is False

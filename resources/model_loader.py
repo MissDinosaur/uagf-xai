@@ -35,10 +35,11 @@ class ModelLoader:
         model_type = resolved["model_type"]
         model_entrypoint = resolved["model_entrypoint"]
 
-        if not resolved["is_directory_contract"] and not source_path.exists():
+        if not source_path.exists():
             raise FileNotFoundError(
                 "Model artifact not found. "
                 f"uri={resolved['uri']!r}, resolved_path={str(source_path)!r}, "
+                f"model_artifact_kind={resolved['model_artifact_kind']!r}, "
                 f"model_format={model_format!r}, "
                 f"model_framework={model_framework!r}, "
                 f"model_type={model_type!r}, "
@@ -47,6 +48,7 @@ class ModelLoader:
 
         ModelLoader._log_resolved_artifact(resolved)
 
+        # If it belongs to LLM/Agentic case, then its model path should be a directory
         if LLMModelLoader.supports(model_format, model_framework):
             if source_path.is_dir():
                 return LLMModelLoader.load(
@@ -66,11 +68,7 @@ class ModelLoader:
                     f"source_path={str(source_path)!r}"
                 )
 
-        if TraditionalModelLoader.supports(
-            source_path,
-            model_format,
-            model_framework,
-        ):
+        if TraditionalModelLoader.supports(source_path, model_format, model_framework):
             return TraditionalModelLoader.load(
                 source_path,
                 uri=resolved["uri"],
@@ -80,9 +78,9 @@ class ModelLoader:
                 model_entrypoint=model_entrypoint,
             )
 
-        if model_format == "model_directory":
+        if resolved["is_directory_contract"]:
             raise ValueError(
-                "Unsupported model_directory contract. "
+                "Unsupported model directory contract. "
                 f"uri={resolved['uri']!r}, "
                 f"resolved_path={str(artifact_path)!r}, "
                 f"entrypoint={model_entrypoint!r}, "
@@ -145,6 +143,7 @@ class ModelLoader:
             "artifact_uri": resolved["uri"],
             "resolved_artifact_path": str(resolved["artifact_path"]),
             "source_path": str(resolved["source_path"]),
+            "model_artifact_kind": resolved["model_artifact_kind"],
             "model_format": resolved["model_format"],
             "model_framework": resolved["model_framework"],
             "model_type": resolved["model_type"],
@@ -225,9 +224,24 @@ class ModelLoader:
         )
         model_type = getattr(audit_context, "model_type", None) or None
         model_entrypoint = getattr(audit_context, "model_entrypoint", None) or None
+        model_artifact_kind = ModelLoader._normalize(
+            getattr(audit_context, "model_artifact_kind", None)
+        )
         system_type = ModelLoader._normalize(
             getattr(audit_context, "system_type", "")
         )
+
+        if not model_artifact_kind:
+            raise ValueError(
+                "audit_context.model_artifact_kind is required and must be "
+                "'single_file' or 'directory'."
+            )
+        if model_artifact_kind not in {"single_file", "directory"}:
+            raise ValueError(
+                "Unsupported audit_context.model_artifact_kind. "
+                f"Expected 'single_file' or 'directory', got "
+                f"{model_artifact_kind!r}."
+            )
 
         if not model_format and not model_framework:
             if system_type in {"llm", "agentic"}:
@@ -237,25 +251,27 @@ class ModelLoader:
                 model_format = "joblib"
                 model_framework = "sklearn"
         if not model_format:
-            model_format = ModelLoader._infer_format_from_framework(model_framework)
+            model_format = ModelLoader._infer_model_format_from_framework(model_framework)
         if not model_framework:
-            model_framework = ModelLoader._infer_framework_from_format(model_format)
+            model_framework = ModelLoader._infer_model_framework_from_format(model_format)
 
-        is_directory_contract = model_format == "model_directory"
+        is_directory_contract = model_artifact_kind == "directory"
         if is_directory_contract:
-            ModelLoader._validate_directory_contract(
-                uri,
-                artifact_path,
-                model_entrypoint,
-            )
+            ModelLoader._validate_directory_contract(uri, artifact_path, model_entrypoint)
             source_path = artifact_path / model_entrypoint
         else:
             source_path = artifact_path
+            if artifact_path.exists() and artifact_path.is_dir():
+                raise IsADirectoryError(
+                    "Single-file model artifact contract resolved to a directory. "
+                    f"uri={uri!r}, resolved_path={str(artifact_path)!r}"
+                )
 
         return {
             "uri": uri,
             "artifact_path": artifact_path,
             "source_path": source_path,
+            "model_artifact_kind": model_artifact_kind,
             "model_format": model_format,
             "model_framework": model_framework,
             "model_type": model_type,
@@ -282,12 +298,12 @@ class ModelLoader:
         if not model_entrypoint:
             raise ValueError(
                 "audit_context.model_entrypoint is required when "
-                "model_format == 'model_directory'. "
+                "model_artifact_kind == 'directory'. "
                 f"uri={uri!r}, resolved_path={str(artifact_path)!r}"
             )
 
     @staticmethod
-    def _infer_format_from_framework(model_framework: str) -> str:
+    def _infer_model_format_from_framework(model_framework: str) -> str:
         if model_framework in {"sklearn", "scikit-learn", "xgboost", "lightgbm"}:
             return "joblib"
         if model_framework in {"transformers", "huggingface"}:
@@ -297,7 +313,7 @@ class ModelLoader:
         return model_framework
 
     @staticmethod
-    def _infer_framework_from_format(model_format: str) -> str:
+    def _infer_model_framework_from_format(model_format: str) -> str:
         if model_format in {"joblib", "pkl", "pickle"}:
             return "sklearn"
         if model_format in {"huggingface", "hf"}:

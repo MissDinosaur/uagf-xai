@@ -29,7 +29,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run UAGF-XAI audit workflow")
     parser.add_argument(
         "--system-type",
-        choices=["traditional", "llm", "agentic"],
+        choices=["traditional_ml", "llm", "agentic"],
         default=None,
         help=(
             "Run local validation mode instead of loading model/data from S5. "
@@ -158,6 +158,9 @@ def main():
         print(f"Task type    : {audit_context.task_type}")
         print(f"Target column: {audit_context.target_column}")
         print(f"Model artifact URI: {audit_context.model_artifact_uri}")
+        print(
+            f"Model artifact kind: {audit_context.model_artifact_kind}"
+        )
 
         results = audit(
             audit_context,
@@ -177,7 +180,7 @@ if __name__ == "__main__":
 Example usage:
 
 # Local validation mode with mocked German Credit dataset
-python main.py --system-type traditional
+python main.py --system-type traditional_ml
 
 # Local validation mode with mocked LLM/Agentic system
 python main.py --system-type llm --llm-model gpt2

@@ -36,7 +36,9 @@ def test_specialized_loaders_have_separate_contract_detection(tmp_path):
 
     assert TraditionalModelLoader.supports(model_file, "joblib", "sklearn")
     assert not LLMModelLoader.supports("joblib", "sklearn")
-    assert LLMModelLoader.supports("model_directory", "huggingface")
+    assert LLMModelLoader.supports(
+        "huggingface_pretrained", "huggingface_transformers"
+    )
 
 
 def test_single_joblib_model_is_loaded(tmp_path, model_context_factory):
@@ -67,7 +69,7 @@ def test_single_pickle_model_is_loaded(tmp_path, model_context_factory):
     assert loaded.predict([[8]])[0] == pytest.approx(2.0)
 
 
-def test_model_directory_loads_entrypoint_and_metadata(tmp_path, model_context_factory):
+def test_directory_artifact_loads_entrypoint_and_metadata(tmp_path, model_context_factory):
     directory = tmp_path / "model"
     directory.mkdir()
     model = DummyRegressor(strategy="mean").fit([[0], [1]], [2.0, 4.0])
@@ -77,7 +79,8 @@ def test_model_directory_loads_entrypoint_and_metadata(tmp_path, model_context_f
     )
     context = model_context_factory(
         model_artifact_uri=str(directory),
-        model_format="model_directory",
+        model_artifact_kind="directory",
+        model_format="joblib",
         model_framework="sklearn",
         model_entrypoint="entry.joblib",
     )
@@ -86,16 +89,18 @@ def test_model_directory_loads_entrypoint_and_metadata(tmp_path, model_context_f
     metadata = ModelLoader.load_metadata(context)
 
     assert isinstance(loaded, DummyRegressor)
+    assert metadata["model_artifact_kind"] == "directory"
     assert metadata["is_directory_contract"] is True
     assert any("deployment_wrapper_meta.json" in item for item in metadata["loaded_metadata_files"])
 
 
-def test_model_directory_requires_entrypoint(tmp_path, model_context_factory):
+def test_directory_artifact_requires_entrypoint(tmp_path, model_context_factory):
     directory = tmp_path / "model"
     directory.mkdir()
     context = model_context_factory(
         model_artifact_uri=str(directory),
-        model_format="model_directory",
+        model_artifact_kind="directory",
+        model_format="joblib",
         model_entrypoint=None,
     )
 
@@ -112,3 +117,29 @@ def test_missing_minio_cache_artifact_has_clear_error(model_context_factory):
 
     assert uri in str(error.value)
     assert "resolved_path" in str(error.value)
+
+
+def test_model_format_does_not_infer_directory_kind(tmp_path, model_context_factory):
+    directory = tmp_path / "model"
+    directory.mkdir()
+    context = model_context_factory(
+        model_artifact_uri=str(directory),
+        model_artifact_kind="single_file",
+        model_format="model_directory",
+        model_entrypoint="entry.joblib",
+    )
+
+    with pytest.raises(IsADirectoryError, match="Single-file model artifact"):
+        ModelLoader.load(context)
+
+
+def test_model_artifact_kind_is_required(tmp_path, model_context_factory):
+    path = tmp_path / "model.joblib"
+    path.touch()
+    context = model_context_factory(
+        model_artifact_uri=str(path),
+        model_artifact_kind=None,
+    )
+
+    with pytest.raises(ValueError, match="model_artifact_kind is required"):
+        ModelLoader.load(context)

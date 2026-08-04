@@ -9,7 +9,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Literal, List, Optional, get_args
+from typing import Literal, List, cast, get_args
+
+SystemType = Literal["traditional_ml", "llm", "agentic"]
+Modality = Literal[
+    "tabular",
+    "time_series",
+    "text",
+    "image",
+    "audio",
+    "multimodal",
+    "unknown",
+]
 
 TaskType = Literal[
     "binary_classification",
@@ -19,6 +30,8 @@ TaskType = Literal[
     "llm_generation",
     "anomaly_detection",
 ]
+
+ModelArtifactKind = Literal["single_file", "directory"]
 
 
 @dataclass
@@ -30,39 +43,47 @@ class AuditContext:
     EU AI Act and the characteristics of the system under audit.
     """
 
-    system_type: str | None = None
-    modality: str | None = None
+    system_type: SystemType = "traditional_ml"
+    modality: Modality = "tabular"
     application_domain: str | None = None
     risk_tier: str | None = None
     applicable_articles: List[str] = field(default_factory=list)
     blocking_findings: list = field(default_factory=list)
     csp_satisfied: bool = True
 
+    task_type: TaskType | None = None
+    provider_name: str | None = None
+
     model_artifact_uri: str | None = None
+    model_artifact_kind: ModelArtifactKind | None = None
     model_format: str | None = None
     model_framework: str | None = None
     model_type: str | None = None
     model_entrypoint: str | None = None
 
+    # traditional ML resources
     training_dataset_uri: str | None = None
     evaluation_dataset_uri: str | None = None
     target_column: str | None = None
     positive_label: str | int | None = None
     sensitive_feature_columns: list[str] = field(default_factory=list)
 
+    # LLM / Agentic resources
     golden_set_uri: str | None = None
     system_prompt_uri: str | None = None
     rag_manifest_uri: str | None = None
     guardrail_config_uri: str | None = None
 
-    task_type: TaskType | None = None
-    provider_name: str | None = None
-    output_namespace: str | None = None
+    def __post_init__(self):
+        """Normalize direct DTO construction to the public S5/S6 vocabulary."""
+        normalized = _normalize_text(self.system_type).replace(" ", "_")
+        self.system_type = (
+            normalized if normalized in {"llm", "agentic"} else "traditional_ml"
+        )
+        self.modality = _normalize_modality_value(self.modality)
 
 
-_CBEP_ARTICLES: frozenset[str] = frozenset(
-    ["Art9", "Art10", "Art13", "Art14", "Art15", "Art61"]
-)
+_CBEP_ARTICLES = frozenset(["Art9", "Art10", "Art13", "Art14", "Art15", "Art61"])
 
 _ARTICLE_RE = re.compile(r"^Art\.?(\d+)$")
 
@@ -82,29 +103,42 @@ _ANNEX_III_SECTION_MAP: dict[str, str] = {
 }
 
 
-def _normalize_article(raw: str) -> str | None:
-    m = _ARTICLE_RE.match(raw.strip())
-    if m:
-        return f"Art{m.group(1)}"
-    return None
-
-
 def _normalize_text(value) -> str:
     return str(value).strip().lower() if value is not None else ""
+
+
+def _normalize_modality_value(value) -> Modality:
+    normalized = _normalize_text(value).replace("-", "_").replace(" ", "_")
+    aliases = {
+        "agentic": "text",
+        "llm": "text",
+        "nlp": "text",
+        "natural_language": "text",
+        "timeseries": "time_series",
+    }
+    normalized = aliases.get(normalized, normalized)
+    allowed = set(get_args(Modality))
+    if normalized not in allowed:
+        return "unknown"
+    return normalized  # type: ignore[return-value]
+
+
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no", ""}:
+            return False
+    return bool(value)
 
 
 def _coerce_optional_text(value) -> str | None:
     if value in ("", None):
         return None
     return str(value)
-
-
-def _as_string_list(value) -> list[str]:
-    if not value:
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if item not in ("", None)]
-    return [str(value)]
 
 
 def _derive_application_domain(data: dict) -> str:
@@ -123,91 +157,55 @@ def _derive_application_domain(data: dict) -> str:
     return str(ctx).lower() if ctx else "unknown"
 
 
-def _default_model_metadata(system_type: str) -> tuple[str, str]:
-    system_type_normalized = _normalize_text(system_type)
-    if system_type_normalized in {"llm", "agentic"}:
-        return "huggingface", "transformers"
-    return "joblib", "sklearn"
-
-
-def _default_task_type(system_type: str) -> TaskType:
-    system_type_normalized = _normalize_text(system_type)
-    if system_type_normalized in {"llm", "agentic"}:
-        return "llm_generation"
-    return "binary_classification"
-
-
-def _normalize_task_type(raw_value, system_type: str) -> TaskType:
-    raw = _normalize_text(raw_value)
-    if raw in get_args(TaskType):
-        return raw  # type: ignore[return-value]
-    return _default_task_type(system_type)
-
-
-def _default_positive_label(task_type: str):
-    if task_type in {
-        "regression",
-        "forecasting",
-        "llm_generation",
-        "anomaly_detection",
-    }:
-        return None
-    return 1
-
-
-def _coerce_positive_label(value):
-    if value in ("", None):
-        return None
-    return value
-
-
-def _looks_like_llm_model(model_type: str | None) -> bool:
-    model_type_norm = _normalize_text(model_type)
-    if not model_type_norm:
-        return False
-    return any(
-        token in model_type_norm
-        for token in ("llm", "rag", "agentic", "mistral", "lora")
+def _derive_system_type(data: dict, stage_a: dict, stage_b: dict) -> SystemType:
+    """Derive the canonical system family with the S5 LLM flag as authority."""
+    is_llm_or_agentic = _coerce_bool(
+        data.get("is_llm_or_agentic")
+        or stage_b.get("is_llm_or_agentic")
     )
+    if not is_llm_or_agentic:
+        return "traditional_ml"
 
-
-def _infer_system_type(
-    explicit_system_type,
-    is_llm_or_agentic,
-    model_type: str | None,
-) -> str:
-    explicit = _normalize_text(explicit_system_type)
-    model_type_norm = _normalize_text(model_type)
-    llm_like = bool(is_llm_or_agentic) or _looks_like_llm_model(model_type)
-
-    if explicit in {"llm", "agentic"} or llm_like:
-        if explicit == "agentic" or "agentic" in model_type_norm:
-            return "agentic"
-        return "llm"
-
-    return explicit or "traditional"
-
-
-def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
-    is_llm_or_agentic = data.get("is_llm_or_agentic") or stage_b.get("is_llm_or_agentic")
-
-    model_type = _coerce_optional_text(
-        data.get("model_type") or stage_b.get("model_type")
+    text_pool = " ".join(
+        _normalize_text(value)
+        for value in (
+            data.get("system_type"),
+            data.get("modality"),
+            data.get("declared_modality"),
+            data.get("verified_modality"),
+            stage_a.get("declared_modality"),
+            stage_b.get("system_type"),
+            stage_b.get("modality"),
+            stage_b.get("declared_modality"),
+            stage_b.get("verified_modality"),
+            stage_b.get("model_type"),
+            stage_b.get("general_description"),
+        )
     )
-    system_type = _infer_system_type(
-        data.get("system_type")
-        or data.get("declared_modality")
-        or data.get("verified_modality")
-        or data.get("modality"),
-        is_llm_or_agentic,
-        model_type,
-    )
+    if any(
+        token in text_pool
+        for token in ("agentic", "tool-calling", "tool calling", "tool_calling")
+    ):
+        return "agentic"
+    return "llm"
 
-    modality = _coerce_optional_text(
+
+def _derive_modality(data: dict, stage_a: dict, stage_b: dict) -> Modality:
+    raw_modality = (
         data.get("verified_modality")
         or data.get("modality")
         or data.get("declared_modality")
+        or stage_a.get("declared_modality")
+        or stage_b.get("verified_modality")
+        or stage_b.get("modality")
+        or stage_b.get("declared_modality")
     )
+    return _normalize_modality_value(raw_modality)
+
+
+def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
+    system_type = _derive_system_type(data, stage_a, stage_b)
+    modality = _derive_modality(data, stage_a, stage_b)
     risk_tier = _coerce_optional_text(
         data.get("verified_risk_tier")
         or data.get("risk_tier")
@@ -218,7 +216,8 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     compliance_matrix: dict = data.get("compliance_matrix", {})
     raw_articles: list[str] = []
     for raw_key in compliance_matrix:
-        token = _normalize_article(raw_key)
+        match = _ARTICLE_RE.match(raw_key.strip())
+        token = f"Art{match.group(1)}" if match else None
         if token and token in _CBEP_ARTICLES:
             raw_articles.append(token)
 
@@ -242,81 +241,49 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     else:
         csp_satisfied = bool(csp_raw)
 
-    model_artifact_uri = _coerce_optional_text(
-        data.get("model_artifact_uri") or stage_b.get("model_artifact_uri")
+    model_artifact_uri = _coerce_optional_text(stage_b.get("model_artifact_uri"))
+    raw_artifact_kind = _normalize_text(stage_b.get("model_artifact_kind"))
+    if raw_artifact_kind and raw_artifact_kind not in {"single_file", "directory"}:
+        raise ValueError(
+            "client_submission.stage_b.model_artifact_kind must be "
+            "'single_file' or 'directory'."
+        )
+    model_artifact_kind = (
+        cast(ModelArtifactKind, raw_artifact_kind) if raw_artifact_kind else None
     )
-    model_format = _coerce_optional_text(
-        data.get("model_format") or stage_b.get("model_format")
-    )
-    model_framework = _coerce_optional_text(
-        data.get("model_framework") or stage_b.get("model_framework")
-    )
-    model_entrypoint = _coerce_optional_text(
-        data.get("model_entrypoint") or stage_b.get("model_entrypoint")
-    )
+    model_format = _coerce_optional_text(stage_b.get("model_format"))
+    model_framework = _coerce_optional_text(stage_b.get("model_framework"))
+    model_type = _coerce_optional_text(stage_b.get("model_type"))
+    model_entrypoint = _coerce_optional_text(stage_b.get("model_entrypoint"))
+    training_dataset_uri = _coerce_optional_text(stage_b.get("training_dataset_uri"))
+    evaluation_dataset_uri = _coerce_optional_text(stage_b.get("evaluation_dataset_uri"))
+    target_column = _coerce_optional_text(stage_b.get("target_column"))
+    positive_label = stage_b.get("positive_label")
+    positive_label = None if positive_label in ("", None) else positive_label
 
-    training_dataset_uri = _coerce_optional_text(
-        data.get("training_dataset_uri") or stage_b.get("training_dataset_uri")
-    )
-    evaluation_dataset_uri = _coerce_optional_text(
-        data.get("evaluation_dataset_uri") or stage_b.get("evaluation_dataset_uri")
-    )
+    sensitive_feature_columns = stage_b.get("sensitive_feature_columns") or []
+    if not isinstance(sensitive_feature_columns, list):
+        sensitive_feature_columns = [sensitive_feature_columns]
+    sensitive_feature_columns = [
+        str(item) for item in sensitive_feature_columns if item not in ("", None)
+    ]
 
-    target_column = _coerce_optional_text(
-        data.get("target_column") or stage_b.get("target_column")
-    )
+    golden_set_uri = _coerce_optional_text(stage_b.get("golden_set_uri"))
+    system_prompt_uri = _coerce_optional_text(stage_b.get("system_prompt_uri"))
+    rag_manifest_uri = _coerce_optional_text(stage_b.get("rag_manifest_uri"))
+    guardrail_config_uri = _coerce_optional_text(stage_b.get("guardrail_config_uri"))
 
-    positive_label = _coerce_positive_label(
-        data.get("positive_label")
-        if "positive_label" in data
-        else stage_b.get("positive_label")
-    )
+    task_type_raw = stage_b.get("task_type")
+    normalized_task_type = _normalize_text(task_type_raw)
+    if normalized_task_type and normalized_task_type not in get_args(TaskType):
+        raise ValueError(
+            "client_submission.stage_b.task_type has an unsupported value: "
+            f"{task_type_raw!r}."
+        )
+    task_type = cast(TaskType, normalized_task_type) if normalized_task_type else None
 
-    sensitive_feature_columns = _as_string_list(
-        data.get("sensitive_feature_columns")
-        or stage_b.get("sensitive_feature_columns")
-        or []
-    )
-
-    golden_set_uri = _coerce_optional_text(
-        data.get("golden_set_uri") or stage_b.get("golden_set_uri")
-    )
-    system_prompt_uri = _coerce_optional_text(
-        data.get("system_prompt_uri") or stage_b.get("system_prompt_uri")
-    )
-    rag_manifest_uri = _coerce_optional_text(
-        data.get("rag_manifest_uri") or stage_b.get("rag_manifest_uri")
-    )
-    guardrail_config_uri = _coerce_optional_text(
-        data.get("guardrail_config_uri") or stage_b.get("guardrail_config_uri")
-    )
-
-    task_type_raw = data.get("task_type") or stage_b.get("task_type")
-    if task_type_raw is None and (
-        is_llm_or_agentic or system_type in {"llm", "agentic"}
-    ):
-        task_type_raw = "llm_generation"
-
-    task_type = _normalize_task_type(task_type_raw, system_type)
-    if _looks_like_llm_model(model_type):
-        task_type = "llm_generation"
-        if system_type not in {"llm", "agentic"}:
-            system_type = "agentic"
-
-    if positive_label is None:
-        positive_label = _default_positive_label(task_type)
-
-    if model_format is None or model_framework is None:
-        default_format, default_framework = _default_model_metadata(system_type)
-        model_format = model_format or default_format
-        model_framework = model_framework or default_framework
-
-    if target_column is None and task_type != "llm_generation":
-        target_column = "target"
-
-    stage_a_provider = stage_a.get("provider_name")
     provider_name = (
-        stage_a_provider
+        stage_a.get("provider_name")
         or data.get("provider_name")
         or stage_b.get("provider_name")
         or None
@@ -331,6 +298,7 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         blocking_findings=blocking_findings,
         csp_satisfied=csp_satisfied,
         model_artifact_uri=model_artifact_uri,
+        model_artifact_kind=model_artifact_kind,
         model_format=model_format,
         model_framework=model_framework,
         model_type=model_type,
@@ -346,7 +314,6 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         guardrail_config_uri=guardrail_config_uri,
         task_type=task_type,
         provider_name=provider_name,
-        output_namespace=None,
     )
 
 

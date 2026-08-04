@@ -168,3 +168,29 @@ def test_structured_dice_output_is_normalized_as_explainability():
     assert result["metrics"]["changed_features_count"] == 1
     assert result["metrics"]["changed_features"][0]["feature"] == "income"
     assert result["raw_output"] == raw
+
+
+def test_forecasting_uncertainty_is_preserved_in_common_schema():
+    raw = {
+        "type": "uncertainty",
+        "method": "MAPIE (Conformal Prediction)",
+        "status": "completed",
+        "task_type": "forecasting",
+        "prediction_interval_kind": "numeric_prediction_interval",
+        "estimator_mode": "prefit",
+        "calibration_policy": "first_half_of_evaluation_data",
+        "calibration_rows": 20,
+        "measurement_rows": 20,
+        "confidence_level": 0.9,
+        "coverage": 0.85,
+        "mean_interval_width": 2.4,
+        "coverage_gap": 0.05,
+    }
+
+    result = normalize_evidence_results({"uncertainty": raw})["uncertainty"]
+
+    assert REQUIRED_FIELDS <= set(result)
+    assert result["status"] == "completed"
+    assert result["metrics"]["task_type"] == "forecasting"
+    assert result["metrics"]["prediction_interval_kind"] == "numeric_prediction_interval"
+    assert "temporal dependence" in " ".join(result["limitations"])

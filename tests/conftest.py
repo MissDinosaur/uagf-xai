@@ -39,22 +39,28 @@ def governance_context():
 @pytest.fixture
 def traditional_s5_json():
     return {
-        "system_type": "traditional",
+        "system_type": "traditional_ml",
+        "is_llm_or_agentic": False,
         "modality": "tabular",
         "risk_tier": "high",
-        "model_artifact_uri": "file://models/model.joblib",
-        "model_format": "joblib",
-        "model_framework": "sklearn",
-        "model_type": "binary_classifier",
-        "model_entrypoint": None,
-        "training_dataset_uri": "file://data/train.csv",
-        "evaluation_dataset_uri": "file://data/eval.csv",
-        "target_column": "target",
-        "positive_label": 1,
-        "sensitive_feature_columns": ["gender"],
-        "task_type": "binary_classification",
-        "provider_name": "Test Provider",
         "cgsa_csp_satisfiable": True,
+        "client_submission": {
+            "stage_a": {"provider_name": "Test Provider"},
+            "stage_b": {
+                "model_artifact_uri": "file://models/model.joblib",
+                "model_artifact_kind": "single_file",
+                "model_format": "joblib",
+                "model_framework": "sklearn",
+                "model_type": "binary_classifier",
+                "model_entrypoint": None,
+                "training_dataset_uri": "file://data/train.csv",
+                "evaluation_dataset_uri": "file://data/eval.csv",
+                "target_column": "target",
+                "positive_label": 1,
+                "sensitive_feature_columns": ["gender"],
+                "task_type": "binary_classification",
+            },
+        },
     }
 
 
@@ -62,18 +68,26 @@ def traditional_s5_json():
 def llm_s5_json():
     return {
         "system_type": "agentic",
+        "is_llm_or_agentic": True,
         "modality": "text",
         "risk_tier": "high",
-        "model_artifact_uri": "file://models/llm/",
-        "model_format": "model_directory",
-        "model_framework": "huggingface",
-        "model_type": "llm_rag_agentic_mistral_lora",
-        "model_entrypoint": "stub",
-        "golden_set_uri": "file://data/golden.json",
-        "system_prompt_uri": "file://data/system_prompt.txt",
-        "rag_manifest_uri": "file://data/rag.json",
-        "guardrail_config_uri": "file://data/guardrails.json",
         "cgsa_csp_satisfiable": True,
+        "client_submission": {
+            "stage_a": {},
+            "stage_b": {
+                "model_artifact_uri": "file://models/llm/",
+                "model_artifact_kind": "directory",
+                "model_format": "huggingface_pretrained",
+                "model_framework": "huggingface_transformers",
+                "model_type": "llm_rag_agentic_mistral_lora",
+                "model_entrypoint": "stub",
+                "golden_set_uri": "file://data/golden.json",
+                "system_prompt_uri": "file://data/system_prompt.txt",
+                "rag_manifest_uri": "file://data/rag.json",
+                "guardrail_config_uri": "file://data/guardrails.json",
+                "task_type": "llm_generation",
+            },
+        },
     }
 
 
@@ -92,7 +106,7 @@ def small_mixed_frame():
 @pytest.fixture
 def traditional_audit_context():
     return AuditContext(
-        system_type="traditional",
+        system_type="traditional_ml",
         modality="tabular",
         application_domain="finance",
         risk_tier="high",
@@ -136,11 +150,12 @@ def model_context_factory():
     def factory(**overrides):
         values = {
             "model_artifact_uri": None,
+            "model_artifact_kind": "single_file",
             "model_format": "joblib",
             "model_framework": "sklearn",
             "model_type": "test_model",
             "model_entrypoint": None,
-            "system_type": "traditional",
+            "system_type": "traditional_ml",
         }
         values.update(overrides)
         return SimpleNamespace(**values)

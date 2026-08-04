@@ -4,7 +4,7 @@ from layers.llm.evidence_methods import LLM_METHOD_ORDER
 from planner.cbep import plan_evidence
 
 
-def _audit(task_type, *, system_type="traditional", articles=None):
+def _audit(task_type, *, system_type="traditional_ml", articles=None):
     return AuditContext(
         system_type=system_type,
         modality="text" if system_type in {"llm", "agentic"} else "tabular",
@@ -23,16 +23,18 @@ def test_high_risk_binary_classification_selects_traditional_evidence():
         _audit("binary_classification", articles=["Art10", "Art13", "Art15"])
     )
 
-    assert methods == ["shap", "fairness", "uncertainty", "drift", "lime", "dice"]
+    assert methods == ["shap", "lime", "dice", "fairness", "uncertainty", "drift"]
     assert trace["final_plan"] == methods
+    assert trace["planning_model"] == "deterministic_constraint_informed"
 
 
-def test_forecasting_filters_classification_only_methods():
+def test_forecasting_adds_supported_uncertainty_and_filters_classification_only_methods():
     methods, trace = plan_evidence(_audit("forecasting", articles=["Art13"]))
 
-    assert methods == ["shap", "drift"]
+    assert methods == ["shap", "uncertainty", "drift"]
     incompatible = trace["task_compatibility_assessment"]["incompatible_methods"]
-    assert incompatible == ["fairness", "uncertainty", "lime", "dice"]
+    assert incompatible == ["fairness", "lime", "dice"]
+    assert "uncertainty" not in incompatible
 
 
 def test_anomaly_detection_filters_probability_dependent_methods():
@@ -42,6 +44,9 @@ def test_anomaly_detection_filters_probability_dependent_methods():
     incompatible = trace["task_compatibility_assessment"]["incompatible_methods"]
     assert "dice" in incompatible
     assert "uncertainty" in incompatible
+    decisions = {item["method"]: item for item in trace["method_decisions"]}
+    assert decisions["uncertainty"]["status"] == "incompatible_filtered"
+    assert "anomaly_detection" in decisions["uncertainty"]["reason"]
 
 
 def test_high_risk_agentic_case_selects_professor_defined_llm_path():

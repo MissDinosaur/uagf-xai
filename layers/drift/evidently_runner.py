@@ -237,6 +237,7 @@ def run_drift(
 
     limitations = [
         "Feature-level statistical drift does not prove model performance degradation.",
+        "The current implementation measures data and feature distribution drift, not label-based concept drift.",
         "Drift results depend on sample size and chosen statistical thresholds.",
         "Categorical drift uses distribution distance and should be interpreted with domain knowledge.",
         "The current Evidently API version may not expose per-column details, so UAGF-XAI adds fallback feature-level tests.",

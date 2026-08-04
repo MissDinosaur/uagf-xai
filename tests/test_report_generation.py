@@ -5,6 +5,7 @@ from pathlib import Path
 from adapters.s5_audit_adapter import AuditContext
 from layers.llm.evidence_methods import LLM_METHOD_ORDER, llm_method_display_name
 from report import report_generator
+from report.report_builder import build_cbep_decision_table
 from report.method_titles import report_method_title
 from schema.evidence_schema import not_applicable_evidence, skipped_evidence
 from schema.evidence_schema import completed_evidence
@@ -72,11 +73,8 @@ def test_html_report_contains_professional_sections_and_raw_evidence(
     assert "Method Applicability and Skipped Evidence" not in html
     assert '<section id="method-applicability">' not in html
     assert "8. Raw Evidence Appendix" in html
-    assert (
-        "CBEP creates an article- and risk-driven plan and then applies task "
-        "compatibility screening. Incompatible methods are excluded to avoid "
-        "misleading or invalid evidence."
-    ) in html
+    assert "deterministic, constraint-informed planning procedure" in html
+    assert "Incompatible methods are excluded" in html
 
 
 def test_report_renders_skipped_and_not_applicable_statuses(
@@ -114,6 +112,30 @@ def test_report_renders_skipped_and_not_applicable_statuses(
     assert "status-not-applicable" in html
     assert "No sensitive features." in html
     assert 'class="callout limitation"' in html
+
+
+def test_anomaly_report_explains_task_compatibility_filtering():
+    audit_context = AuditContext(
+        system_type="traditional_ml",
+        modality="tabular",
+        application_domain="critical_infrastructure",
+        risk_tier="high",
+        task_type="anomaly_detection",
+    )
+    results = {
+        "_cbep_trace": _trace(
+            ["shap", "drift"],
+            incompatible=["fairness", "uncertainty", "lime", "dice"],
+        )
+    }
+
+    table = build_cbep_decision_table(results, audit_context)
+
+    assert "evaluated the traditional evidence library" in table["intro"]
+    assert "reported as non-applicable" in table["intro"]
+    rows = {row["method"]: row for row in table["rows"]}
+    assert rows["MAPIE"]["selected"] == "No"
+    assert "IsolationForest" in rows["MAPIE"]["reason"]
 
 
 def test_report_reorganizes_scope_resources_and_runtime_without_duplicates(

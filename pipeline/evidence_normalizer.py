@@ -5,13 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from layers.llm.evidence_methods import (
-    LLM_GROUNDING,
-    LLM_PROMPT_FAIRNESS,
-    LLM_SELF_CONSISTENCY,
-    LLM_SEMANTIC_DRIFT,
-    llm_method_display_name,
-)
 from schema.evidence_schema import (
     EVIDENCE_STATUSES,
     completed_evidence,
@@ -19,83 +12,21 @@ from schema.evidence_schema import (
     not_applicable_evidence,
     skipped_evidence,
 )
+from schema.method_catalog import (
+    METHOD_CATALOG as CANONICAL_METHOD_CATALOG,
+    RESULT_KEY_TO_TOKEN,
+)
 
 
 EVIDENCE_CATALOG = {
-    "shap": {
-        "result_key": "explainability",
-        "evidence_id": "EXP-SHAP",
-        "layer": "explainability",
-        "method": "SHAP",
-        "articles": ["Art. 13"],
-    },
-    "lime": {
-        "result_key": "lime",
-        "evidence_id": "EXP-LIME",
-        "layer": "explainability",
-        "method": "LIME",
-        "articles": ["Art. 13"],
-    },
-    "dice": {
-        "result_key": "counterfactual",
-        "evidence_id": "EXP-DICE",
-        "layer": "explainability",
-        "method": "DiCE",
-        "articles": ["Art. 13"],
-    },
-    "fairness": {
-        "result_key": "fairness",
-        "evidence_id": "FAIR-FAIRLEARN",
-        "layer": "fairness",
-        "method": "Fairlearn",
-        "articles": ["Art. 10"],
-    },
-    "uncertainty": {
-        "result_key": "uncertainty",
-        "evidence_id": "UNC-MAPIE",
-        "layer": "uncertainty",
-        "method": "MAPIE (Conformal Prediction)",
-        "articles": ["Art. 14", "Art. 15"],
-    },
-    "drift": {
-        "result_key": "drift",
-        "evidence_id": "DRIFT-EVIDENTLY",
-        "layer": "drift",
-        "method": "Evidently + Feature Drift Tests",
-        "articles": ["Art. 15", "Art. 61"],
-    },
-    LLM_GROUNDING: {
-        "result_key": LLM_GROUNDING,
-        "evidence_id": "LLM-E1",
-        "layer": "llm_explainability",
-        "method": llm_method_display_name(LLM_GROUNDING),
-        "articles": ["Art. 13"],
-    },
-    LLM_SELF_CONSISTENCY: {
-        "result_key": LLM_SELF_CONSISTENCY,
-        "evidence_id": "LLM-E2",
-        "layer": "llm_uncertainty",
-        "method": llm_method_display_name(LLM_SELF_CONSISTENCY),
-        "articles": ["Art. 15"],
-    },
-    LLM_SEMANTIC_DRIFT: {
-        "result_key": LLM_SEMANTIC_DRIFT,
-        "evidence_id": "LLM-E3",
-        "layer": "llm_drift",
-        "method": llm_method_display_name(LLM_SEMANTIC_DRIFT),
-        "articles": ["Art. 61"],
-    },
-    LLM_PROMPT_FAIRNESS: {
-        "result_key": LLM_PROMPT_FAIRNESS,
-        "evidence_id": "LLM-E4",
-        "layer": "llm_fairness",
-        "method": llm_method_display_name(LLM_PROMPT_FAIRNESS),
-        "articles": ["Art. 10"],
-    },
-}
-
-RESULT_KEY_TO_TOKEN = {
-    details["result_key"]: token for token, details in EVIDENCE_CATALOG.items()
+    token: {
+        "result_key": details.result_key,
+        "evidence_id": details.evidence_id,
+        "layer": details.layer,
+        "method": details.method,
+        "articles": list(details.articles),
+    }
+    for token, details in CANONICAL_METHOD_CATALOG.items()
 }
 
 REQUIRED_FIELDS = frozenset(
@@ -250,7 +181,8 @@ def _normalize_fairness(raw: dict) -> dict:
             f"The largest equalized odds difference was observed for {feature} ({value})."
         )
     limitations = [
-        "Fairness metrics indicate statistical group differences but do not by themselves prove unlawful discrimination."
+        "Fairness metrics indicate statistical group differences but do not by themselves prove unlawful discrimination.",
+        "UAGF-XAI does not infer legally sensitive attributes; missing S5 sensitive-feature metadata is treated as an evidence gap.",
     ]
     if any("age" in name.lower() for name in per_feature):
         limitations.append(
@@ -258,7 +190,7 @@ def _normalize_fairness(raw: dict) -> dict:
         )
     return completed_evidence(
         **_base_payload("fairness", raw),
-        summary="Fairlearn computed group fairness metrics for the configured sensitive features.",
+        summary="Fairlearn computed group fairness metrics for sensitive features explicitly provided by the S5 audit context.",
         key_findings=findings,
         metrics={
             "sensitive_features": list(per_feature),
@@ -272,11 +204,20 @@ def _normalize_uncertainty(raw: dict) -> dict:
     metrics = {
         key: raw.get(key)
         for key in (
+            "task_type",
+            "prediction_interval_kind",
+            "estimator_mode",
+            "calibration_policy",
+            "calibration_rows",
+            "measurement_rows",
             "confidence_level",
             "coverage",
             "mean_interval_width",
             "coverage_gap",
+            "interval_min",
+            "interval_max",
         )
+        if raw.get(key) is not None
     }
     return completed_evidence(
         **_base_payload("uncertainty", raw),
@@ -286,7 +227,12 @@ def _normalize_uncertainty(raw: dict) -> dict:
             f"The coverage gap is {metrics['coverage_gap']}.",
         ],
         metrics=metrics,
-        limitations=[],
+        limitations=[
+            "Coverage is measured on the held-out second half of the evaluation data; the first half is used only for conformal calibration.",
+            "Forecasting intervals are marginal conformal intervals and do not model temporal dependence explicitly.",
+        ] if raw.get("task_type") == "forecasting" else [
+            "Coverage is measured on the held-out second half of the evaluation data; the first half is used only for conformal calibration."
+        ],
     )
 
 
@@ -420,7 +366,7 @@ def _compatibility_reason(token: str, task_type: str) -> str:
         ("forecasting", "fairness"): "Forecasting is not a group classification task in the current implementation.",
         ("forecasting", "lime"): "The current LIME pathway is not enabled for forecasting.",
         ("forecasting", "dice"): "The current DiCE pathway is not applicable to the forecasting wrapper.",
-        ("forecasting", "uncertainty"): "The current MAPIE runner does not support the forecasting wrapper.",
+        ("forecasting", "uncertainty"): "MAPIE uncertainty is enabled for fitted numeric forecasting estimators.",
         ("anomaly_detection", "fairness"): "The current fairness runner supports classification group metrics, not anomaly scores.",
         ("anomaly_detection", "lime"): "The current LIME pathway is not enabled for anomaly detection.",
         ("anomaly_detection", "dice"): "IsolationForest-style anomaly detection does not expose standard class probabilities required by DiCE.",

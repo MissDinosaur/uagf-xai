@@ -11,8 +11,7 @@ from pipeline.evidence_normalizer import normalize_evidence_results
 
 def _is_llm_contract(audit_context) -> bool:
     system_type = str(getattr(audit_context, "system_type", "") or "").strip().lower()
-    task_type = str(getattr(audit_context, "task_type", "") or "").strip().lower()
-    return task_type == "llm_generation" or system_type in {"llm", "agentic"}
+    return system_type in {"llm", "agentic"}
 
 
 def _split_evaluation_frame(evaluation_dataset, target_column: str):
@@ -51,7 +50,7 @@ def _build_resource_context(audit_context, resource_bundle):
     model_class = type(model).__name__ if model is not None else None
     if getattr(model, "status", None) == "metadata_only":
         artifact_kind = "Metadata-only LLM model folder"
-    elif getattr(audit_context, "model_format", None) == "model_directory":
+    elif getattr(audit_context, "model_artifact_kind", None) == "directory":
         artifact_kind = "Model directory"
     else:
         artifact_kind = "Single model file"
@@ -68,6 +67,7 @@ def _build_resource_context(audit_context, resource_bundle):
         "rag_manifest": getattr(resource_bundle, "rag_manifest", None),
         "guardrail_config": getattr(resource_bundle, "guardrail_config", None),
         "model_metadata": model_metadata,
+        "model_artifact_kind": getattr(audit_context, "model_artifact_kind", None),
         "model_status": getattr(model, "status", model_metadata.get("status")),
         "model_is_loadable": getattr(
             model,
@@ -165,7 +165,6 @@ def audit_with_detailed_data(
     methods, cbep_trace = plan_evidence(audit_context, governance_context)
     print("Selected modules:", methods)
     provider_name = getattr(audit_context, "provider_name", None)
-    output_namespace = getattr(audit_context, "output_namespace", None)
     resource_context = None
     if resource_bundle is not None:
         resource_context = _build_resource_context(
@@ -186,7 +185,6 @@ def audit_with_detailed_data(
         system_type=audit_context.system_type,
         sensitive_features=sensitive_features,
         provider_name=provider_name,
-        output_namespace=output_namespace,
         resource_context=resource_context,
         task_type=audit_context.task_type,
         drift_reference_data=drift_reference_data,
@@ -210,7 +208,6 @@ def audit_with_detailed_data(
         results,
         audit_context.risk_tier,
         provider_name=provider_name,
-        output_namespace=output_namespace,
         audit_context=audit_context,
         governance_context=governance_context,
         resource_context=resource_context,

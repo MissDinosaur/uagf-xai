@@ -1,303 +1,154 @@
-Given the governance context, audit requirements, trained model, and evaluation dataset, determine the minimum sufficient evidence set and execute the corresponding evidence generation pipeline.
+# UAGF-XAI
 
-For the LegalMindD LLM/agentic validation case, the S5 artifact provided in the repository contains model configuration and adapter metadata but no loadable local model weights. Therefore, UAGF-XAI validates the LLM golden-set resource contract and metadata loading pathway, while execution-level LLM evidence generation is reported as skipped. A complete local HuggingFace model artifact would be required to run full LLM-E1 to LLM-E4 evidence generation.
+UAGF-XAI is the S6 audit-evidence component of the Unified AI Governance
+Framework (UAGF). It consumes governance context from S4 and audit/resource
+context from S5, selects a minimum sufficient evidence set, executes compatible
+evidence methods, and produces structured HTML/PDF audit reports.
 
-# uagf-xai
-UAGF-XAI is the S6 evidence generation component of the UAGF platform. It provides a CBEP-driven toolkit that selects and generates minimum sufficient audit evidence for both traditional ML and LLM/agentic systems under selected EU AI Act requirements.
+## Implemented scope
 
-## Report generation
+The canonical method catalogue contains six traditional ML methods and four
+LLM/agentic methods.
 
-- HTML audit reports are generated under `outputs/report/`.
-- PDF reports are generated automatically from the HTML report using Playwright.
-- Install the Python dependencies, then install Chromium once with:
+| Pathway | Layer | Implemented method |
+| --- | --- | --- |
+| Traditional ML | Explainability | SHAP feature attribution |
+| Traditional ML | Explainability | LIME local explanation |
+| Traditional ML | Explainability | DiCE counterfactual explanation |
+| Traditional ML | Fairness | Fairlearn group fairness metrics |
+| Traditional ML | Uncertainty | MAPIE conformal prediction |
+| Traditional ML | Drift | Evidently plus feature-level drift tests |
+| LLM / Agentic | LLM-E1 | Grounding Score |
+| LLM / Agentic | LLM-E2 | Self-Consistency Score |
+| LLM / Agentic | LLM-E3 | Semantic Drift Index |
+| LLM / Agentic | LLM-E4 | Differential Prompt Fairness |
 
-  ```bash
-  python -m playwright install chromium
-  ```
+Aequitas, MC Dropout, automatic protected-attribute inference, text LIME,
+attention visualization, and the obsolete “16 XAI methods” claim are not part
+of the implemented scope.
 
-- Use `--no-pdf` to generate HTML without running the optional PDF export step.
-- If Playwright or Chromium is unavailable, HTML generation still succeeds and the CLI prints explicit installation guidance.
+## CBEP
 
-## Testing
+The Constraint-Based Evidence Planner (CBEP) is inspired by constraint
+satisfaction problem (CSP) theory and operationalizes evidence selection as a
+deterministic, constraint-informed planning procedure. It applies explicit
+regulatory, governance, system-type, and task-compatibility constraints to
+select a minimum sufficient evidence set for each audit context.
 
-Run the fast, offline unit test suite with:
+CBEP does not use or claim to use a generic `python-constraint` solver. The
+`csp_satisfied` field is an S5 audit-status input; when it is false, CBEP broadens
+the evidence sweep. Every plan includes a structured trace covering:
 
-```bash
-python -m pytest
+1. the traditional or LLM/agentic branch;
+2. the risk-tier base plan;
+3. EU AI Act article mappings;
+4. governance-priority adjustments;
+5. the upstream CSP/status signal;
+6. task-method compatibility screening;
+7. the final method plan and per-method decisions.
+
+Method metadata is centralized in `schema/method_catalog.py`. The planner,
+evidence normalizer, ordering helpers, and report view model derive their method
+identities, layers, article mappings, compatibility, and requirements from this
+catalogue.
+
+## Evidence semantics and boundaries
+
+- Fairness evidence is generated only for sensitive features explicitly
+  supplied by S5. UAGF-XAI does not infer legally sensitive attributes. Missing
+  sensitive-feature metadata is reported as an evidence gap.
+- MAPIE uses the exact fitted S5 estimator in prefit mode. Classification,
+  regression, and forecasting use disjoint conformal-calibration and measurement
+  subsets of the evaluation data; the audited model is not retrained.
+- Drift evidence measures current data and feature-distribution drift. It does
+  not currently claim label-based concept-drift detection.
+- Anomaly detection is currently supported by SHAP and drift evidence. Methods
+  requiring classification semantics or probability interfaces are reported as
+  task-incompatible, not as planning failures.
+- The LegalMindD fixture is a metadata-only HuggingFace artifact. Its golden-set
+  resource contract is validated, while execution-level LLM-E1 to LLM-E4 results
+  are reported as skipped because no local weights are available. UAGF-XAI does
+  not download or fabricate a model.
+
+## Architecture
+
+```text
+S4 JSON -> GovernanceAdapter -> GovernanceContext -----+
+                                                       |
+S5 JSON -> AuditAdapter -> AuditContext -> ResourceLoader
+                                      |                |
+                                      +-------> ResourceBundle
+                                                       |
+                                                       v
+                     canonical method catalogue -> CBEP planner
+                                                       |
+                                                       v
+                                               evidence executor
+                                                       |
+                                                       v
+                                      unified EvidenceResult schema
+                                                       |
+                                                       v
+                                             HTML/PDF audit report
 ```
 
-The real Playwright PDF smoke test is marked as optional integration coverage
-and excluded from the default run. Execute it explicitly with:
+Evidence layers receive resolved models and data from the execution boundary;
+they do not parse S4/S5 JSON or load raw artifact URIs directly.
+
+## Resource contracts
+
+Traditional ML cases use a model file, sklearn model bundle, or model directory,
+plus training/evaluation dataset URIs and a target column. LLM/agentic cases use
+a model directory and golden-set URI, with optional prompt, RAG-manifest, and
+guardrail resources. LLM cases do not require training/evaluation CSV files.
+
+The normalized S5/S6 vocabulary is:
+
+- `system_type`: `traditional_ml`, `llm`, or `agentic`;
+- `modality`: `tabular`, `time_series`, `text`, `image`, `audio`,
+  `multimodal`, or `unknown`.
+
+The S5 `is_llm_or_agentic` flag is authoritative for selecting the system
+family. When true, descriptive model metadata distinguishes `llm` from
+`agentic`; when false, the adapter returns `traditional_ml`.
+
+## Validation commands
+
+Activate `venv310`, then run:
+
+```bash
+python main.py --s4-json data/01_finclear_gmbh/s4_finclear-creditguard-001.json --s5-json data/01_finclear_gmbh/s5_finclear_gmbh_audit_state.json
+python main.py --s4-json data/02_retailiq_ag/s4_retailiq-demandpulse-001.json --s5-json data/02_retailiq_ag/s5_retailiq_ag_audit_state.json
+python main.py --s4-json data/03_harbourlogistik_gmbh/s4_harbourlogistik-harboursense-001.json --s5-json data/03_harbourlogistik_gmbh/s5_harbourlogistik_gmbh_audit_state.json
+python main.py --s4-json data/04_legalmindd_ai_ltd/s4_legalmindd-lexai-001.json --s5-json data/04_legalmindd_ai_ltd/s5_legalmindd_ai_ltd_audit_state.json
+```
+
+Add `--no-pdf` for faster HTML-only validation.
+
+## Reports
+
+HTML and PDF reports are written under `outputs/report/`. PDF export uses
+Playwright Chromium. Install the browser once if required:
+
+```bash
+python -m playwright install chromium
+```
+
+The report distinguishes selected/executed, selected/skipped,
+not-applicable, and compatibility-filtered methods through the Executive
+Summary, CBEP planning table, Coverage Matrix, findings, runtime table, and raw
+evidence appendix.
+
+## Tests
+
+Run the offline unit suite with:
+
+```bash
+python -m pytest -q
+```
+
+The real browser PDF smoke test is marked as integration coverage:
 
 ```bash
 python -m pytest -m integration
 ```
-
-UAGF-XAI is an automated AI audit evidence generator that integrates explainability, fairness, uncertainty and drift detection tools into a unified pipeline guided by a constraint-based evidence planner.
-
-The proposed system architecture integrates multiple AI auditing techniques into a unified pipeline. The system receives an AI model and its associated dataset as input. A Constraint-Based Evidence Planner (CBEP) determines which analytical methods should be executed depending on the AI system risk level.
-
-The architecture is composed of four analytical layers: explainability, fairness, uncertainty estimation, and drift detection. Each layer applies specialized techniques using established Python libraries. The outputs of these layers are aggregated into structured evidence reports that can support AI auditing and regulatory transparency.
-
-This project now supports two system families:
-- Traditional ML systems: SHAP + Fairlearn + MAPIE + Evidently (+ DiCE for high risk).
-- LLM or Agentic systems: dedicated LLM evidence tools for explainability, fairness, uncertainty, and drift.
-
-Validation domains now include a 5th domain for locally runnable open-source LLMs via HuggingFace (default GPT-2).
-
-Removed from active design:
-- Aequitas (Fairlearn is retained as the fairness toolkit).
-- MC Dropout (MAPIE is retained for uncertainty).
-
-## Project Architecture
-```text
-uagf-xai
-│
-├── api/
-│   └── audit_api.py
-│
-├── planner/
-│   └── cbep.py
-│
-├── layers/
-│   ├── explainability/
-│   │   ├── shap_runner.py
-│   │   ├── lime_runner.py
-│   │   └── dice_runner.py
-│   ├── fairness/
-│   │   └── fairlearn_runner.py
-│   ├── uncertainty/
-│   │   └── mapie_runner.py
-│   ├── drift/
-│   │   └── evidently_runner.py
-│   └── llm/
-│       ├── llm_explainability_runner.py
-│       ├── llm_fairness_runner.py
-│       ├── llm_uncertainty_runner.py
-│       └── llm_drift_runner.py
-│
-├── models/
-│   └── llm_validation.py
-│
-├── pipeline/
-│   └── executor.py
-│
-├── schema/
-│   └── evidence_schema.py
-│
-├── report/
-│   ├── templates/
-│   └── report_generator.py
-│
-├── data/
-│
-├── tests/
-│
-├── main.py
-├── README.md
-└── requirements.txt
-```
-
-### Quick Execution Flow
-```text
-main.py -> audit_api -> planner (CBEP) -> executor -> layers -> report
-```
-
-### System Design
-- unified pipeline
-- method registry
-- evidence schema
-- report generator
-- CBEP planner
-
-### Project Workflow
-```text
-                        ┌────────────────────────────────────────┐
-                        │ User / API Input                       │
-                        │ model + dataset + risk + system_type   │
-                        └───────────────────┬────────────────────┘
-                                            │
-                                            ▼
-                        ┌────────────────────────────────────────┐
-                        │ UAGF-XAI API                           │
-                        │ audit(model, X, y, risk_level,         │
-                        │      system_type)                      │
-                        └───────────────────┬────────────────────┘
-                                            │
-                                            ▼
-                        ┌────────────────────────────────────────┐
-                        │ CBEP Evidence Planner                  │
-                        │ selects method set by:                 │
-                        │ - risk_level                           │
-                        │ - system_type                          │
-                        └───────────────────┬────────────────────┘
-                                            │
-                                            ▼
-                        ┌────────────────────────────────────────┐
-                        │ Execution Pipeline (executor.py)       │
-                        └───────────────────┬────────────────────┘
-                                            │
-                     ┌──────────────────────┴──────────────────────┐
-                     │                                             │
-                     ▼                                             ▼
-      ┌───────────────────────────────────┐       ┌───────────────────────────────────┐
-      │ if system_type in {llm, agentic}  │       │ else traditional ML system        │
-      ├───────────────────────────────────┤       ├───────────────────────────────────┤
-      │ LLM Layer 1: Explainability       │       │ Layer 1: Explainability (SHAP,    │
-      │ LLM Layer 2: Fairness             │       │          LIME, DiCE)              │
-      │ LLM Layer 3: Uncertainty          │       │ Layer 2: Fairness (Fairlearn)     │
-      │ LLM Layer 4: Drift                │       │ Layer 3: Uncertainty (MAPIE)      │
-      │                                   │       │ Layer 4: Drift (Evidently)        │
-      └─────────────────────┬─────────────┘       └─────────────────────┬─────────────┘
-                            │                                           │
-                            └─────────────────────┬─────────────────────┘
-                                                  │
-                                                  ▼
-                               ┌─────────────────────────────────┐
-                               │ Unified Evidence Schema / Dict  │
-                               └─────────────────┬───────────────┘
-                                                 │
-                                                 ▼
-                               ┌─────────────────────────────────┐
-                               │ Report Generator                │
-                               │ HTML and PDF report output      │
-                               └─────────────────┬───────────────┘
-                                                 │
-                                                 ▼
-                               ┌─────────────────────────────────┐
-                               │ AI Audit Report                 │
-                               └─────────────────────────────────┘
-```
-
-### Dataset
-| Case          | Domain         | System         |
-| ------------- | -------------- | -------------- |
-| German Credit | Finance        | Traditional ML |
-| Energy        | Energy         | Traditional ML |
-| M5            | Retail         | Traditional ML |
-| IMDb          | NLP Classifier | Traditional ML |
-| GPT2/Mistral  | LLM            | LLM            |
-
-
-### Planner Workflow
-```text
-                 ┌──────────────────────────┐
-                 │      Input to CBEP       │
-                 │                          │
-                 │  AI Model                │
-                 │  Dataset                 │
-                 │  system_type             │
-                 │  Risk Tier (Minimal /    │
-                 │             Limited /    │
-                 │             High Risk)   │
-                 └──────────────┬───────────┘
-                                │
-                                ▼
-                ┌────────────────────────────────┐
-                │  EU AI Act Constraint Rules    │
-                │                                │
-                │ Example rules:                 │
-                │                                │
-                │ IF risk = minimal              │
-                │    require explainability      │
-                │                                │
-                │ IF risk = limited              │
-                │    require explainability      │
-                │    require fairness            │
-                │                                │
-                │ IF risk = high                 │
-                │    require explainability      │
-                │    require fairness            │
-                │    require uncertainty         │
-                │    require drift detection     │
-                │                                │
-                │ IF system_type in {llm,agentic}│
-                │    choose llm_* method family  │
-                │ ELSE                           │
-                │    choose traditional methods  │
-                └───────────────┬────────────────┘
-                                │
-                                ▼
-             ┌────────────────────────────────────┐
-             │  CSP Problem Construction          │
-             │                                    │
-             │ Variables:                         │
-             │                                    │
-             │ traditional variables              │
-             │   shap, lime, dice, fairlearn,     │
-             │   mapie, drift                     │
-             │ llm variables                      │
-             │   llm_explainability, llm_fairness,│
-             │   llm_uncertainty, llm_drift       │
-             │                                    │
-             │ Constraints:                       │
-             │ must satisfy EU AI Act evidence    │
-             └───────────────┬────────────────────┘
-                             │
-                             ▼
-                ┌─────────────────────────────┐
-                │     CSP Solver              │
-                │ (python-constraint)         │
-                │                             │
-                │ Goal:                       │
-                │ Select MINIMUM set of       │
-                │ evidence methods satisfying │
-                │ all constraints             │
-                └───────────────┬─────────────┘
-                                │
-                                ▼
-                ┌───────────────────────────────┐
-                │     Selected Evidence Set     │
-                │                               │
-                │ Example Outputs               │
-                │                               │
-                │ Traditional + Minimal →       │
-                │   [shap]                      │
-                │                               │
-                │ Traditional + Limited →       │
-                │   [shap, fairness]            │
-                │                               │
-                │ Traditional + High →          │
-                │   [shap, fairness, uncertainty│
-                │    drift, dice]               │
-                │                               │
-                │ LLM/Agentic + High →          │
-                │   [llm_explainability,        │
-                │    llm_fairness,              │
-                │    llm_uncertainty, llm_drift]│
-                └───────────────┬───────────────┘
-                                │
-                                ▼
-                  ┌────────────────────────────┐
-                  │   Evidence Execution       │
-                  │                            │
-                  │ Pipeline runs selected     │
-                  │ XAI tools                  │
-                  └───────────────┬────────────┘
-                                  │
-                                  ▼
-                    ┌─────────────────────────┐
-                    │   AI Audit Evidence     │
-                    │                         │
-                    │ Explainability          │
-                    │ Fairness                │
-                    │ Uncertainty             │
-                    │ Drift                   │
-                    └─────────────────────────┘
-```
-
-### Validation Domains
-- Domain 1: German Credit (classification)
-- Domain 2: Energy (regression)
-- Domain 3: M5-style forecasting (time series)
-- Domain 4: IMDB-style text baseline
-- Domain 5: Local open-source LLM via HuggingFace (GPT-2 by default, Mistral model IDs are optional if hardware allows)
-
-### CLI Usage
-- Traditional ML run:
-        python main.py --system-type traditional --risk-level high
-- LLM run (default model GPT-2):
-        python main.py --system-type llm --risk-level high --llm-model gpt2
-- Agentic run:
-        python main.py --system-type agentic --risk-level limited --llm-model gpt2
-

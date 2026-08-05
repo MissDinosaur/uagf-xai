@@ -4,15 +4,29 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import platform as platform_module
-import sys
 from typing import Any
 
 
 def collect_runtime_environment(run_timestamp: str | None = None) -> dict[str, Any]:
     """Return stable, report-ready runtime environment metadata."""
+    if run_timestamp:
+        try:
+            timestamp_value = datetime.fromisoformat(
+                run_timestamp.replace("Z", "+00:00")
+            ).replace(microsecond=0).isoformat()
+        except ValueError:
+            timestamp_value = run_timestamp
+    else:
+        timestamp_value = (
+            datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
+        )
+    python_version = platform_module.python_version()
+    compiler = platform_module.python_compiler()
+    if compiler:
+        python_version = f"{python_version} [{compiler}]"
     return {
-        "run_timestamp": run_timestamp or datetime.now(timezone.utc).astimezone().isoformat(),
-        "python_version": sys.version.replace("\n", " "),
+        "run_timestamp": timestamp_value,
+        "python_version": python_version,
         "platform": platform_module.platform(),
     }
 

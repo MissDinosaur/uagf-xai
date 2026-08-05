@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from report.method_titles import report_method_title
 from report.runtime_metadata import collect_runtime_environment, infer_record_count
 
@@ -11,6 +13,13 @@ def test_runtime_environment_contains_python_and_platform():
     assert metadata["python_version"]
     assert metadata["platform"]
     assert "package_versions" not in metadata
+
+
+def test_runtime_environment_formats_timestamp_and_python_concisely():
+    metadata = collect_runtime_environment("2026-07-27T12:00:00.987654+02:00")
+
+    assert metadata["run_timestamp"] == "2026-07-27T12:00:00+02:00"
+    assert re.fullmatch(r"\d+\.\d+\.\d+ \[[^\]]+\]", metadata["python_version"])
 
 
 def test_record_count_supports_frames_lists_and_nested_golden_sets():

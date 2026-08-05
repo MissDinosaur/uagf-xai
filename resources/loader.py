@@ -54,6 +54,16 @@ class ResourceLoader:
         model = ResourceLoader.load_model(audit_context)
         tokenizer = ResourceLoader.load_tokenizer(audit_context)
         model_metadata = ResourceLoader.load_model_metadata(audit_context)
+        for key in (
+            "input_adapter",
+            "text_feature_column",
+            "vectorizer_class",
+            "estimator_class",
+            "vocabulary_size",
+        ):
+            value = getattr(model, key, None)
+            if value is not None:
+                model_metadata[key] = value
 
         if ResourceLoader._is_llm_contract(audit_context):
             llm_resources = ResourceLoader.load_llm_resources(audit_context)

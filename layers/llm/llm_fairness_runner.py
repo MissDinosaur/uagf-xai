@@ -4,7 +4,7 @@ Compares response length and lexical polarity across prompt groups.
 """
 
 from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
-from .evidence_methods import LLM_E4_DIFFERENTIAL_PROMPT_FAIRNESS
+from .llm_evidence_methods import LLM_E4_DIFFERENTIAL_PROMPT_FAIRNESS
 
 POSITIVE_WORDS = {
     "good",

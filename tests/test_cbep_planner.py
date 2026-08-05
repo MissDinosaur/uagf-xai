@@ -1,13 +1,20 @@
 from adapters.s4_governance_adapter import GovernanceContext
 from adapters.s5_audit_adapter import AuditContext
-from layers.llm.evidence_methods import LLM_METHOD_ORDER
+from layers.llm.llm_evidence_methods import LLM_METHOD_ORDER
 from planner.cbep import plan_evidence
 
 
-def _audit(task_type, *, system_type="traditional_ml", articles=None):
+def _audit(
+    task_type,
+    *,
+    system_type="traditional_ml",
+    modality=None,
+    articles=None,
+):
     return AuditContext(
         system_type=system_type,
-        modality="text" if system_type in {"llm", "agentic"} else "tabular",
+        modality=modality
+        or ("text" if system_type in {"llm", "agentic"} else "tabular"),
         application_domain="test",
         risk_tier="high",
         applicable_articles=list(articles or []),
@@ -81,3 +88,38 @@ def test_trace_contains_planning_and_governance_inputs():
     ):
         assert key in trace
     assert trace["governance_context"]["status"] == "applied"
+
+
+def test_text_classification_filters_dice_before_execution():
+    methods, trace = plan_evidence(
+        _audit(
+            "binary_classification",
+            modality="text",
+            articles=["Art10", "Art13", "Art15"],
+        )
+    )
+
+    assert methods == ["shap", "lime", "fairness", "uncertainty", "drift"]
+    assessment = trace["task_compatibility_assessment"]
+    assert assessment["normalized_modality"] == "text"
+    assert assessment["incompatible_methods"] == ["dice"]
+    assert "tabular counterfactuals" in assessment["incompatibility_reasons"]["dice"]
+
+
+def test_unsupported_traditional_modalities_are_explicitly_filtered():
+    for modality in ("image", "audio"):
+        methods, trace = plan_evidence(
+            _audit(
+                "binary_classification",
+                modality=modality,
+                articles=["Art10", "Art13", "Art15"],
+            )
+        )
+
+        assert methods == []
+        assessment = trace["task_compatibility_assessment"]
+        assert assessment["incompatible_methods"]
+        assert all(
+            modality in reason
+            for reason in assessment["incompatibility_reasons"].values()
+        )

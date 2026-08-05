@@ -8,7 +8,7 @@ from layers.llm.llm_explainability_runner import run_llm_explainability
 from layers.llm.llm_fairness_runner import run_llm_fairness
 from layers.llm.llm_uncertainty_runner import run_llm_uncertainty
 from layers.llm.llm_drift_runner import run_llm_drift
-from layers.llm.evidence_methods import (
+from layers.llm.llm_evidence_methods import (
     LLM_GROUNDING,
     LLM_PROMPT_FAIRNESS,
     LLM_SELF_CONSISTENCY,
@@ -21,7 +21,14 @@ import time
 def _timed_call(producer):
     """Execute one evidence producer and return its result and wall-clock time."""
     started_at = time.perf_counter()
-    result = producer()
+    try:
+        result = producer()
+    except Exception as exc:
+        result = {
+            "status": "failed",
+            "error_type": type(exc).__name__,
+            "reason": str(exc),
+        }
     return result, time.perf_counter() - started_at
 
 
@@ -128,6 +135,11 @@ def execute(
     resource_context=None,
     task_type=None,
     drift_reference_data=None,
+    evaluation_frame=None,
+    sensitive_data=None,
+    feature_columns=None,
+    modality=None,
+    positive_label=1,
     target_column=None,
 ):
 
@@ -191,15 +203,17 @@ def execute(
                 estimator=estimator,
                 provider_name=provider_name,
                 output_namespace=output_namespace,
+                modality=modality,
             )
         )
 
     if "lime" in methods:
         results["lime"], runtimes["lime"] = _timed_call(
             lambda: run_lime(
-                estimator,
-                X_model,
+                model,
+                X_raw,
                 task_type=task_type,
+                modality=modality,
                 provider_name=provider_name,
                 output_namespace=output_namespace,
             )
@@ -212,7 +226,9 @@ def execute(
                     model,
                     X_raw,
                     y,
+                    sensitive_data=sensitive_data,
                     sensitive_features=sensitive_features,
+                    positive_label=positive_label,
                 )
             )
         else:
@@ -236,14 +252,19 @@ def execute(
                 X_raw,
                 y,
                 task_type=task_type,
+                modality=modality,
             )
         )
 
     if "drift" in methods:
         results["drift"], runtimes["drift"] = _timed_call(
             lambda: run_drift(
-                X_raw,
+                evaluation_frame if evaluation_frame is not None else X_raw,
                 reference_data=drift_reference_data,
+                model=model,
+                modality=modality,
+                feature_columns=feature_columns,
+                sensitive_feature_columns=sensitive_features,
                 target_column=target_column,
                 provider_name=provider_name,
                 output_namespace=output_namespace,

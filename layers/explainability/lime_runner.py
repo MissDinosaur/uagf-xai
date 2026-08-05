@@ -49,14 +49,113 @@ def _scalar(value):
     return float(array[0]) if len(array) else None
 
 
+def _run_text_lime(model, X_model, provider_name, output_namespace):
+    try:
+        from lime.lime_text import LimeTextExplainer
+    except ImportError as exc:
+        raise ImportError("lime is required to run text LIME analysis.") from exc
+
+    if not hasattr(model, "predict_proba") or not hasattr(model, "classes_"):
+        raise TypeError(
+            "Text LIME requires a fitted text model adapter with predict_proba()."
+        )
+    if isinstance(X_model, pd.DataFrame):
+        if X_model.shape[1] != 1:
+            raise ValueError("Text LIME requires exactly one model input column.")
+        raw_texts = X_model.iloc[:, 0].tolist()
+    elif isinstance(X_model, pd.Series):
+        raw_texts = X_model.tolist()
+    else:
+        raw_texts = list(X_model)
+    if not raw_texts or any(not isinstance(value, str) for value in raw_texts):
+        raise ValueError("Text LIME requires at least one non-null text record.")
+
+    class_names = [str(value) for value in model.classes_]
+    explainer = LimeTextExplainer(class_names=class_names, random_state=42)
+
+    def predict_fn(texts):
+        return model.predict_proba(list(texts))
+
+    sample = raw_texts[0]
+    available_terms = max(1, len(set(sample.split())))
+    explanation = explainer.explain_instance(
+        sample,
+        predict_fn,
+        num_features=min(10, available_terms),
+        top_labels=1,
+    )
+    probabilities = np.asarray(predict_fn([sample]))[0]
+    predicted_index = int(np.argmax(probabilities))
+    labels = explanation.available_labels()
+    explained_label = int(labels[0]) if labels else predicted_index
+    contributions = explanation.as_list(label=explained_label)
+
+    os.makedirs("outputs/lime", exist_ok=True)
+    output_path = build_output_path(
+        "lime",
+        provider_name,
+        "lime_text_explanation",
+        ".html",
+        fallback=output_namespace,
+    )
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        output_file.write(explanation.as_html())
+
+    predicted_label = model.classes_[predicted_index]
+    if hasattr(predicted_label, "item"):
+        predicted_label = predicted_label.item()
+    token_contributions = [
+        {"token_or_phrase": str(token), "weight": round(float(weight), 6)}
+        for token, weight in contributions
+    ]
+    return {
+        "type": "explainability",
+        "method": "LIME",
+        "status": "completed",
+        "mode": "classification",
+        "input_representation": "raw_text",
+        "explainer": "LimeTextExplainer",
+        "sample_index": 0,
+        "predicted_label": predicted_label,
+        "class_probabilities": [round(float(value), 6) for value in probabilities],
+        "token_contributions": token_contributions,
+        "feature_contributions": [
+            {
+                "feature_condition": item["token_or_phrase"],
+                "weight": item["weight"],
+            }
+            for item in token_contributions
+        ],
+        "features_explained": len(token_contributions),
+        "local_fidelity_score": round(float(explanation.score), 6),
+        "local_prediction": round(_scalar(explanation.local_pred), 6),
+        "prediction": {
+            "predicted_label": predicted_label,
+            "class_probabilities": [
+                round(float(value), 6) for value in probabilities
+            ],
+        },
+        "output": output_path,
+    }
+
+
 def run_lime(
-    estimator,
+    model,
     X_model,
     task_type,
+    modality=None,
     provider_name=None,
     output_namespace="audit",
 ):
     """Generate a local LIME explanation for the first evaluation sample."""
+    if str(modality or "").strip().lower() == "text":
+        return _run_text_lime(
+            model,
+            X_model,
+            provider_name,
+            output_namespace,
+        )
+
     try:
         from lime.lime_tabular import LimeTabularExplainer
     except ImportError as exc:
@@ -64,7 +163,11 @@ def run_lime(
             "lime is required to run LIME explainability analysis."
         ) from exc
 
-    frame = _numeric_frame(X_model)
+    prepared_input = (
+        model.prepare_input(X_model) if hasattr(model, "prepare_input") else X_model
+    )
+    estimator = getattr(model, "estimator", model)
+    frame = _numeric_frame(prepared_input)
     feature_names = [str(column) for column in frame.columns]
     training_data = frame.to_numpy(dtype=float)
     normalized_task = str(task_type or "").strip().lower()

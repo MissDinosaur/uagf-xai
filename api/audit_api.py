@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
+from typing import Any
+
+import pandas as pd
 
 from planner.cbep import plan_evidence
 from pipeline.executor import execute
@@ -14,12 +18,80 @@ def _is_llm_contract(audit_context) -> bool:
     return system_type in {"llm", "agentic"}
 
 
-def _split_evaluation_frame(evaluation_dataset, target_column: str):
-    if hasattr(evaluation_dataset, "columns") and target_column in evaluation_dataset.columns:
-        X = evaluation_dataset.drop(columns=[target_column])
-        y = evaluation_dataset[target_column]
-        return X, y
-    return evaluation_dataset, None
+@dataclass
+class EvaluationViews:
+    evaluation_frame: pd.DataFrame
+    X_model: Any
+    y: pd.Series | None
+    sensitive_data: pd.DataFrame | None
+    feature_columns: list[str]
+    sensitive_feature_columns: list[str]
+
+
+def _build_evaluation_views(
+    evaluation_dataset,
+    *,
+    target_column,
+    feature_columns,
+    sensitive_feature_columns,
+    modality,
+) -> EvaluationViews:
+    if not isinstance(evaluation_dataset, pd.DataFrame):
+        raise TypeError("The S5 evaluation dataset must load as a pandas DataFrame.")
+
+    evaluation_frame = evaluation_dataset.copy()
+    if target_column and target_column not in evaluation_frame.columns:
+        raise ValueError(
+            f"Declared target column {target_column!r} is missing from the "
+            "evaluation dataset."
+        )
+    y = evaluation_frame[target_column].copy() if target_column else None
+
+    if feature_columns is None:
+        model_columns = [
+            column for column in evaluation_frame.columns if column != target_column
+        ]
+    else:
+        missing = [
+            column for column in feature_columns if column not in evaluation_frame.columns
+        ]
+        if missing:
+            raise ValueError(
+                "Declared model feature columns are missing from the evaluation "
+                f"dataset: {missing}"
+            )
+        model_columns = list(feature_columns)
+
+    normalized_modality = str(modality or "unknown").strip().lower()
+    if normalized_modality == "text" and len(model_columns) != 1:
+        raise ValueError(
+            "Traditional text evaluation currently requires exactly one declared "
+            f"model feature column; received {model_columns}."
+        )
+    X_model = evaluation_frame.loc[:, model_columns].copy()
+
+    sensitive_columns = list(sensitive_feature_columns or [])
+    missing_sensitive = [
+        column for column in sensitive_columns if column not in evaluation_frame.columns
+    ]
+    if missing_sensitive:
+        raise ValueError(
+            "Declared sensitive feature columns are missing from the evaluation "
+            f"dataset: {missing_sensitive}"
+        )
+    sensitive_data = (
+        evaluation_frame.loc[:, sensitive_columns].copy()
+        if sensitive_columns
+        else None
+    )
+    return EvaluationViews(
+        evaluation_frame=evaluation_frame,
+        X_model=X_model,
+        y=y,
+        sensitive_data=sensitive_data,
+        feature_columns=model_columns,
+        sensitive_feature_columns=sensitive_columns,
+    )
 
 
 def _load_s5_resources(audit_context):
@@ -32,15 +104,16 @@ def _load_s5_resources(audit_context):
                 "LLM / Agentic contract requires audit_context.golden_set_uri "
                 "or an equivalent golden-set resource."
             )
-        sensitive_features = list(audit_context.sensitive_feature_columns or [])
-        return resources, golden_set, None, sensitive_features
+        return resources, golden_set
 
-    X, y = _split_evaluation_frame(
+    views = _build_evaluation_views(
         resources.evaluation_dataset,
-        getattr(audit_context, "target_column", "target"),
+        target_column=getattr(audit_context, "target_column", None),
+        feature_columns=getattr(audit_context, "feature_columns", None),
+        sensitive_feature_columns=audit_context.sensitive_feature_columns,
+        modality=audit_context.modality,
     )
-    sensitive_features = list(audit_context.sensitive_feature_columns or [])
-    return resources, X, y, sensitive_features
+    return resources, views
 
 
 def _build_resource_context(audit_context, resource_bundle):
@@ -57,7 +130,11 @@ def _build_resource_context(audit_context, resource_bundle):
     model_container = (
         "Sklearn model bundle"
         if model_class == "EncodedSklearnModel"
-        else model_class or "Not available"
+        else (
+            "Fitted sklearn text pipeline"
+            if model_class == "SklearnTextModelAdapter"
+            else model_class or "Not available"
+        )
     )
 
     return {
@@ -67,6 +144,12 @@ def _build_resource_context(audit_context, resource_bundle):
         "rag_manifest": getattr(resource_bundle, "rag_manifest", None),
         "guardrail_config": getattr(resource_bundle, "guardrail_config", None),
         "model_metadata": model_metadata,
+        "feature_columns": getattr(audit_context, "feature_columns", None),
+        "sensitive_feature_columns": getattr(
+            audit_context,
+            "sensitive_feature_columns",
+            [],
+        ),
         "model_artifact_kind": getattr(audit_context, "model_artifact_kind", None),
         "model_status": getattr(model, "status", model_metadata.get("status")),
         "model_is_loadable": getattr(
@@ -100,6 +183,11 @@ def _build_resource_context(audit_context, resource_bundle):
         "model_container": model_container,
         "model_class": model_class,
         "load_warnings": getattr(model, "_uagf_load_warnings", []),
+        "input_adapter": model_metadata.get("input_adapter"),
+        "text_feature_column": model_metadata.get("text_feature_column"),
+        "vectorizer_class": model_metadata.get("vectorizer_class"),
+        "estimator_class": model_metadata.get("estimator_class"),
+        "vocabulary_size": model_metadata.get("vocabulary_size"),
         "training_dataset_loaded": (
             getattr(resource_bundle, "training_dataset", None) is not None
         ),
@@ -155,6 +243,9 @@ def audit_with_detailed_data(
     governance_context=None,
     sensitive_features=None,
     resource_bundle=None,
+    evaluation_frame=None,
+    sensitive_data=None,
+    feature_columns=None,
     generate_pdf=True,
     run_started_at=None,
 ):
@@ -188,6 +279,11 @@ def audit_with_detailed_data(
         resource_context=resource_context,
         task_type=audit_context.task_type,
         drift_reference_data=drift_reference_data,
+        evaluation_frame=evaluation_frame,
+        sensitive_data=sensitive_data,
+        feature_columns=feature_columns,
+        modality=audit_context.modality,
+        positive_label=getattr(audit_context, "positive_label", 1),
         target_column=getattr(audit_context, "target_column", None),
     )
 
@@ -232,8 +328,19 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
     datasets are unavailable, the failure is surfaced directly to the caller.
     """
     run_started_at = time.perf_counter()
-    resource_bundle, X, y, sensitive_features = _load_s5_resources(audit_context)
+    resource_bundle, payload = _load_s5_resources(audit_context)
     print("Mode: real S5 resources")
+
+    if _is_llm_contract(audit_context):
+        X = payload
+        y = None
+        sensitive_features = list(audit_context.sensitive_feature_columns or [])
+        views = None
+    else:
+        views = payload
+        X = views.X_model
+        y = views.y
+        sensitive_features = views.sensitive_feature_columns
 
     return audit_with_detailed_data(
         model=resource_bundle.model,
@@ -243,6 +350,9 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
         governance_context=governance_context,
         sensitive_features=sensitive_features,
         resource_bundle=resource_bundle,
+        evaluation_frame=views.evaluation_frame if views else None,
+        sensitive_data=views.sensitive_data if views else None,
+        feature_columns=views.feature_columns if views else None,
         generate_pdf=generate_pdf,
         run_started_at=run_started_at,
     )

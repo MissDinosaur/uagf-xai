@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from layers.llm.evidence_methods import (
+from layers.llm.llm_evidence_methods import (
     LLM_GROUNDING,
     LLM_PROMPT_FAIRNESS,
     LLM_SELF_CONSISTENCY,
@@ -251,6 +251,18 @@ LLM_METHOD_TOKENS = tuple(
 )
 METHOD_TASK_COMPATIBILITY = {
     token: set(item.compatible_tasks) for token, item in METHOD_CATALOG.items()
+}
+METHOD_MODALITY_COMPATIBILITY = {
+    "shap": {"tabular", "time_series", "text"},
+    "lime": {"tabular", "text"},
+    "dice": {"tabular"},
+    "fairness": {"tabular", "text"},
+    "uncertainty": {"tabular", "time_series", "text"},
+    "drift": {"tabular", "time_series", "text"},
+    LLM_GROUNDING: {"text"},
+    LLM_SELF_CONSISTENCY: {"text"},
+    LLM_SEMANTIC_DRIFT: {"text"},
+    LLM_PROMPT_FAIRNESS: {"text"},
 }
 RESULT_KEY_TO_TOKEN = {
     item.result_key: token for token, item in METHOD_CATALOG.items()

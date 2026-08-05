@@ -4,7 +4,7 @@ Builds prompt-response traces and lightweight token statistics.
 """
 
 from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
-from .evidence_methods import LLM_E1_GROUNDING_SCORE
+from .llm_evidence_methods import LLM_E1_GROUNDING_SCORE
 
 
 def run_llm_explainability(generator, llm_payload, resource_context=None):

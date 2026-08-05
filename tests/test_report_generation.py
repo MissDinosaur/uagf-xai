@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from adapters.s5_audit_adapter import AuditContext
-from layers.llm.evidence_methods import LLM_METHOD_ORDER, llm_method_display_name
+from layers.llm.llm_evidence_methods import LLM_METHOD_ORDER, llm_method_display_name
 from report import report_generator
 from report.report_builder import build_cbep_decision_table
 from report.method_titles import report_method_title
@@ -75,6 +75,10 @@ def test_html_report_contains_professional_sections_and_raw_evidence(
     assert "8. Raw Evidence Appendix" in html
     assert "deterministic, constraint-informed planning procedure" in html
     assert "Incompatible methods are excluded" in html
+    coverage = html.split('<section id="coverage-matrix">', 1)[1].split(
+        "</section>", 1
+    )[0]
+    assert "EU AI Act Article" not in coverage
 
 
 def test_report_renders_skipped_and_not_applicable_statuses(
@@ -112,6 +116,17 @@ def test_report_renders_skipped_and_not_applicable_statuses(
     assert "status-not-applicable" in html
     assert "No sensitive features." in html
     assert 'class="callout limitation"' in html
+    findings = html.split('<section id="evidence-findings">', 1)[1].split(
+        "</section>", 1
+    )[0]
+    raw_evidence = html.split('<section id="raw-evidence">', 1)[1].split(
+        "</section>", 1
+    )[0]
+    assert "Skipped for test." in findings
+    assert "Not applicable for test." not in findings
+    assert "Raw Fairness Evidence" in raw_evidence
+    assert "Raw Explainability Evidence â€” DiCE" not in raw_evidence
+    assert "Not applicable for test." not in raw_evidence
 
 
 def test_anomaly_report_explains_task_compatibility_filtering():
@@ -136,6 +151,34 @@ def test_anomaly_report_explains_task_compatibility_filtering():
     rows = {row["method"]: row for row in table["rows"]}
     assert rows["MAPIE"]["selected"] == "No"
     assert "IsolationForest" in rows["MAPIE"]["reason"]
+
+
+def test_cbep_table_uses_modality_reason_from_planning_trace():
+    audit_context = AuditContext(
+        system_type="traditional_ml",
+        modality="text",
+        risk_tier="high",
+        task_type="binary_classification",
+    )
+    results = {
+        "_cbep_trace": _trace(
+            ["shap", "lime", "fairness", "uncertainty", "drift"],
+            incompatible=["dice"],
+        )
+    }
+    reason = (
+        "Excluded because the current DiCE implementation supports tabular "
+        "counterfactuals and is not compatible with text modality."
+    )
+    results["_cbep_trace"]["task_compatibility_assessment"][
+        "incompatibility_reasons"
+    ] = {"dice": reason}
+
+    table = build_cbep_decision_table(results, audit_context)
+
+    rows = {row["method"]: row for row in table["rows"]}
+    assert rows["DiCE"]["reason"] == reason
+    assert "task and modality compatibility screening" in table["intro"]
 
 
 def test_report_reorganizes_scope_resources_and_runtime_without_duplicates(
@@ -180,15 +223,97 @@ def test_report_reorganizes_scope_resources_and_runtime_without_duplicates(
     assert audit_scope.count("Target column") == 1
     assert audit_scope.count("Positive label") == 1
     assert audit_scope.count("Sensitive features") == 1
+    assert "Task type" not in audit_scope
+    assert "Model feature columns" not in audit_scope
     assert "Model and Traditional ML dataset contract" in resources
     assert "data/case/model.joblib" in resources
     assert "Training dataset URI" in resources
     assert "Training rows" in resources
+    for text_only_label in (
+        "Model input adapter",
+        "Text feature column",
+        "TF-IDF vectorizer",
+        "Final estimator",
+        "TF-IDF vocabulary size",
+    ):
+        assert text_only_label not in resources
     assert "Selected methods" not in runtime
     assert "Completed methods" not in runtime
     assert "Skipped / not applicable" not in runtime
     assert "Model and Traditional ML dataset contract" not in runtime
     assert 'class="callout limitation"><strong>Runtime measurement scope:' in runtime
+
+
+def test_executive_summary_uses_separate_system_and_task_cards(
+    tmp_path,
+    monkeypatch,
+    traditional_audit_context,
+    governance_context,
+    unified_result_factory,
+):
+    output = _output_to(tmp_path, monkeypatch)
+    report_generator.generate_report(
+        {
+            "explainability": unified_result_factory(),
+            "_cbep_trace": _trace(["shap"]),
+        },
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+    executive = html.split('<section id="executive-summary">', 1)[1].split(
+        "</section>", 1
+    )[0]
+
+    assert "System type / Modality" in executive
+    assert "Task type" in executive
+    assert "System / task" not in executive
+    assert "Governance verdict" not in executive
+
+
+def test_text_reports_include_text_specific_contract_metadata(
+    tmp_path,
+    monkeypatch,
+    traditional_audit_context,
+    governance_context,
+    unified_result_factory,
+):
+    output = _output_to(tmp_path, monkeypatch)
+    traditional_audit_context.modality = "text"
+    traditional_audit_context.feature_columns = ["cv_text"]
+    report_generator.generate_report(
+        {
+            "explainability": unified_result_factory(),
+            "_cbep_trace": _trace(["shap"]),
+        },
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        resource_context={
+            "input_adapter": "sklearn_text",
+            "text_feature_column": "cv_text",
+            "vectorizer_class": "TfidfVectorizer",
+            "estimator_class": "LogisticRegression",
+            "vocabulary_size": 742,
+        },
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+    audit_scope = html.split('<section id="audit-scope">', 1)[1].split(
+        "</section>", 1
+    )[0]
+    resources = html.split('<section id="resource-loading">', 1)[1].split(
+        "</section>", 1
+    )[0]
+
+    assert "Model feature columns" in audit_scope
+    assert "cv_text" in audit_scope
+    assert "Model input adapter" in resources
+    assert "sklearn_text" in resources
+    assert "TF-IDF vocabulary size" in resources
+    assert ">742<" in resources
 
 
 def test_llm_report_uses_professor_defined_method_names(tmp_path, monkeypatch, governance_context):

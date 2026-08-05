@@ -271,8 +271,15 @@
   <section id="coverage-matrix">
     <h2>6. Evidence Coverage Matrix</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>Evidence Layer</th><th>Evidence Type</th><th>Method</th><th>Status</th><th>EU AI Act Article</th><th>Main Output</th><th>Limitation</th></tr></thead>
-      <tbody>{% for row in report.coverage_matrix %}<tr><td>{{ row.layer }}</td><td>{{ row.evidence_type }}</td><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.articles }}</td><td>{{ row.main_output }}</td><td>{{ row.limitation }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Evidence Layer</th><th>Evidence Type</th><th>Method</th>
+        <th>Status</th><th>Main Output</th><th>Limitation</th></tr></thead>
+      <tbody>{% for row in report.coverage_matrix %}<tr>
+        <td>{{ row.layer }}</td><td>{{ row.evidence_type }}</td>
+        <td>{{ row.method }}</td>
+        <td><span class="status-badge {{ row.status.css_class }}">
+          {{ row.status.label }}</span></td>
+        <td>{{ row.main_output }}</td><td>{{ row.limitation }}</td>
+      </tr>{% endfor %}</tbody>
     </table></div>
   </section>
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from layers.llm.evidence_methods import (
+from layers.llm.llm_evidence_methods import (
     LLM_GROUNDING,
     LLM_METHOD_ORDER,
     LLM_PROMPT_FAIRNESS,
@@ -25,6 +25,7 @@ from schema.method_catalog import (
     CATALOG_VERSION,
     LLM_METHOD_TOKENS,
     METHOD_CATALOG,
+    METHOD_MODALITY_COMPATIBILITY,
     METHOD_TASK_COMPATIBILITY,
     TRADITIONAL_METHOD_TOKENS,
     article_method_map,
@@ -103,33 +104,66 @@ def _normalize_task_type(task_type: str) -> str:
     return str(task_type).strip().lower()
 
 
-def _apply_task_compatibility_assessment(
+def _apply_compatibility_assessment(
     methods: list[str],
     task_type: str,
+    modality: str,
 ) -> tuple[list[str], dict]:
     normalized_task = _normalize_task_type(task_type)
+    normalized_modality = str(modality or "unknown").strip().lower()
+    task_compatible = []
+    modality_compatible = []
     compatible = []
-    incompatible = []
+    reasons = {}
 
     for method in methods:
         allowed_tasks = METHOD_TASK_COMPATIBILITY.get(method)
-        if allowed_tasks is None or normalized_task in allowed_tasks:
+        allowed_modalities = METHOD_MODALITY_COMPATIBILITY.get(method)
+        task_matches = allowed_tasks is None or normalized_task in allowed_tasks
+        modality_matches = (
+            allowed_modalities is None or normalized_modality in allowed_modalities
+        )
+        if task_matches:
+            task_compatible.append(method)
+        if modality_matches:
+            modality_compatible.append(method)
+        if task_matches and modality_matches:
             compatible.append(method)
+            continue
+        if not task_matches:
+            reasons[method] = (
+                f"Excluded because {method} is not compatible with task type "
+                f"{normalized_task}."
+            )
+        elif method == "dice" and normalized_modality == "text":
+            reasons[method] = (
+                "Excluded because the current DiCE implementation supports "
+                "tabular counterfactuals and is not compatible with text modality."
+            )
         else:
-            incompatible.append(method)
+            reasons[method] = (
+                f"Excluded because {method} is not compatible with "
+                f"{normalized_modality} modality."
+            )
+
+    incompatible = [method for method in methods if method not in compatible]
 
     return compatible, {
         "status": "applied",
         "task_type": normalized_task,
-        "assessment_policy": "task-method compatibility screening",
+        "normalized_modality": normalized_modality,
+        "assessment_policy": "task-and-modality compatibility screening",
+        "task_compatible_methods": task_compatible,
+        "modality_compatible_methods": modality_compatible,
         "compatible_methods": compatible,
         "incompatible_methods": incompatible,
+        "incompatibility_reasons": reasons,
         "compatible_count": len(compatible),
         "incompatible_count": len(incompatible),
         "compatibility_map_version": CATALOG_VERSION,
         "note": (
-            "Methods incompatible with the current task type were excluded "
-            "after CBEP planning."
+            "Methods must satisfy both task and modality constraints after "
+            "CBEP planning."
         ),
     }
 
@@ -148,9 +182,9 @@ def _method_decisions(
             reason = "Required by the merged plan and compatible with the task."
         elif token in incompatible:
             status = "incompatible_filtered"
-            reason = (
-                f"Excluded because {token} is not compatible with task type "
-                f"{task_type}."
+            reason = compatibility_trace.get("incompatibility_reasons", {}).get(
+                token,
+                f"Excluded because {token} is not compatible with the audit context.",
             )
         else:
             status = "not_required"
@@ -173,6 +207,7 @@ def plan_evidence(audit, governance=None) -> tuple[list[str], dict]:
         "agentic",
     }
     task_type = _normalize_task_type(getattr(audit, "task_type", ""))
+    modality = str(getattr(audit, "modality", "unknown") or "unknown").lower()
 
     # Step 1: risk-tier base plan.
     base = _base_plan(audit.risk_tier, is_llm)
@@ -245,18 +280,23 @@ def plan_evidence(audit, governance=None) -> tuple[list[str], dict]:
         compatibility_trace = {
             "status": "applied",
             "task_type": task_type,
+            "normalized_modality": modality,
             "assessment_policy": "LLM pathway compatibility screening",
+            "task_compatible_methods": list(methods),
+            "modality_compatible_methods": list(methods),
             "compatible_methods": list(methods),
             "incompatible_methods": [],
+            "incompatibility_reasons": {},
             "compatible_count": len(methods),
             "incompatible_count": 0,
             "compatibility_map_version": CATALOG_VERSION,
             "note": "The selected methods belong to the LLM evidence pathway.",
         }
     else:
-        methods, compatibility_trace = _apply_task_compatibility_assessment(
+        methods, compatibility_trace = _apply_compatibility_assessment(
             methods,
             task_type,
+            modality,
         )
 
     # Step 6: stable catalogue order for execution and reporting.
@@ -270,6 +310,7 @@ def plan_evidence(audit, governance=None) -> tuple[list[str], dict]:
         "system_type": audit.system_type,
         "task_type": task_type,
         "modality": audit.modality,
+        "normalized_modality": modality,
         "risk_tier": audit.risk_tier,
         "application_domain": audit.application_domain,
         "applicable_articles": audit.applicable_articles,

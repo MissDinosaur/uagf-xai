@@ -13,12 +13,17 @@ from typing import Any
 
 from .artifact_utils import resolve_artifact_path
 from .llm_model_loader import LLMModelLoader, MetadataOnlyLLMArtifact
-from .traditional_model_loader import EncodedSklearnModel, TraditionalModelLoader
+from .traditional_model_loader import (
+    EncodedSklearnModel,
+    SklearnTextModelAdapter,
+    TraditionalModelLoader,
+)
 
 __all__ = [
     "EncodedSklearnModel",
     "MetadataOnlyLLMArtifact",
     "ModelLoader",
+    "SklearnTextModelAdapter",
 ]
 
 

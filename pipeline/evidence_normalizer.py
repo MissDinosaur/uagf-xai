@@ -114,8 +114,20 @@ def _normalize_shap(raw: dict) -> dict:
         key_findings=findings,
         metrics={
             "explainer": raw.get("explainer"),
+            "input_representation": raw.get("input_representation"),
+            "feature_semantics": raw.get("feature_semantics"),
             "top_features": top_features,
             "feature_importance": deepcopy(raw.get("feature_importance") or []),
+            "global_token_importance": deepcopy(
+                raw.get("global_token_importance") or []
+            ),
+            "local_token_attributions": deepcopy(
+                raw.get("local_token_attributions") or []
+            ),
+            "top_positive_tokens": deepcopy(raw.get("top_positive_tokens") or []),
+            "top_negative_tokens": deepcopy(raw.get("top_negative_tokens") or []),
+            "predicted_label": raw.get("predicted_label"),
+            "class_probabilities": deepcopy(raw.get("class_probabilities") or []),
         },
         limitations=[],
     )
@@ -124,9 +136,14 @@ def _normalize_shap(raw: dict) -> dict:
 def _normalize_lime(raw: dict) -> dict:
     fidelity = raw.get("local_fidelity_score")
     limitations = [
-        "LIME is a local surrogate explanation for one sample and does not establish global model behaviour.",
-        "Categorical thresholds may refer to saved encoder values in the model-ready numeric representation.",
+        "LIME is a local surrogate explanation for one sample and does not "
+        "establish global model behaviour.",
     ]
+    if raw.get("input_representation") != "raw_text":
+        limitations.append(
+            "Categorical thresholds may refer to saved encoder values in the "
+            "model-ready numeric representation."
+        )
     if isinstance(fidelity, (int, float)) and fidelity < 0.5:
         limitations.append(
             f"The local surrogate fidelity score is {fidelity}, indicating a weak local approximation."
@@ -143,6 +160,8 @@ def _normalize_lime(raw: dict) -> dict:
             "sample_index": raw.get("sample_index"),
             "features_explained": raw.get("features_explained"),
             "feature_contributions": deepcopy(raw.get("feature_contributions") or []),
+            "token_contributions": deepcopy(raw.get("token_contributions") or []),
+            "explainer": raw.get("explainer"),
             "local_fidelity_score": fidelity,
             "local_prediction": raw.get("local_prediction"),
             "prediction": deepcopy(raw.get("prediction") or {}),
@@ -184,7 +203,7 @@ def _normalize_fairness(raw: dict) -> dict:
         "Fairness metrics indicate statistical group differences but do not by themselves prove unlawful discrimination.",
         "UAGF-XAI does not infer legally sensitive attributes; missing S5 sensitive-feature metadata is treated as an evidence gap.",
     ]
-    if any("age" in name.lower() for name in per_feature):
+    if any(name.lower() in {"age", "age_years"} for name in per_feature):
         limitations.append(
             "Age was evaluated as individual values; grouped age bands would be more audit-friendly."
         )
@@ -207,12 +226,15 @@ def _normalize_uncertainty(raw: dict) -> dict:
             "task_type",
             "prediction_interval_kind",
             "estimator_mode",
+            "estimator_class",
+            "input_representation",
             "calibration_policy",
             "calibration_rows",
             "measurement_rows",
             "confidence_level",
             "coverage",
             "mean_interval_width",
+            "mean_prediction_set_size",
             "coverage_gap",
             "interval_min",
             "interval_max",
@@ -380,19 +402,32 @@ def _compatibility_reason(token: str, task_type: str) -> str:
 
 def _not_applicable_result(token: str, task_type: str, trace: dict) -> dict:
     catalog = EVIDENCE_CATALOG[token]
-    reason = _compatibility_reason(token, task_type)
+    modality = str(trace.get("normalized_modality") or "unknown")
+    reason = trace.get("incompatibility_reasons", {}).get(token)
+    reason = reason or _compatibility_reason(token, task_type)
+    unsupported_modality = token not in trace.get("modality_compatible_methods", [])
     return not_applicable_evidence(
         evidence_id=catalog["evidence_id"],
         layer=catalog["layer"],
         method=catalog["method"],
         article_mapping=catalog["articles"],
-        summary=f"{catalog['method']} was not executed because it is not applicable to {task_type}.",
+        summary=(
+            f"{catalog['method']} was not executed because it is not applicable "
+            f"to {modality} modality and {task_type}."
+        ),
         key_findings=[],
         metrics={},
         artifacts=[],
         limitations=[reason],
         raw_output={
             "task_type": task_type,
+            "modality": modality,
+            "reason_code": (
+                "unsupported_modality"
+                if unsupported_modality
+                else "unsupported_task_type"
+            ),
+            "reason": reason,
             "compatibility_assessment": deepcopy(trace),
         },
     )

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
-from scipy.spatial.distance import jensenshannon
+from scipy.spatial.distance import cosine, jensenshannon
 from scipy.stats import ks_2samp
 
 from output_naming import build_output_path
@@ -136,10 +138,208 @@ def _save_feature_tests(
     return output_path
 
 
+def _text_characteristics(texts: pd.Series, analyzer) -> pd.DataFrame:
+    rows = []
+    for value in texts:
+        text = value if isinstance(value, str) else ""
+        tokens = analyzer(text)
+        token_count = len(tokens)
+        rows.append(
+            {
+                "character_count": len(text),
+                "word_count": token_count,
+                "unique_token_ratio": (
+                    len(set(tokens)) / token_count if token_count else 0.0
+                ),
+                "digit_ratio": (
+                    sum(character.isdigit() for character in text) / len(text)
+                    if text
+                    else 0.0
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _save_text_drift(payload, provider_name, output_namespace) -> str:
+    output_path = build_output_path(
+        "drift",
+        provider_name,
+        "text_drift",
+        ".json",
+        fallback=output_namespace or "audit",
+    )
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False, default=str)
+    return output_path
+
+
+def _run_text_drift(
+    reference_df,
+    current_df,
+    *,
+    model,
+    feature_columns,
+    provider_name,
+    output_namespace,
+    numeric_threshold,
+    dataset_drift_threshold,
+):
+    if not feature_columns or len(feature_columns) != 1:
+        raise ValueError(
+            "Text drift requires exactly one S5-declared model feature column."
+        )
+    text_column = feature_columns[0]
+    missing = [
+        label
+        for label, frame in (("reference", reference_df), ("current", current_df))
+        if text_column not in frame.columns
+    ]
+    if missing:
+        raise ValueError(
+            f"Text feature {text_column!r} is missing from: {', '.join(missing)}."
+        )
+    if not hasattr(model, "vectorizer"):
+        raise TypeError("Text drift requires the fitted sklearn text model adapter.")
+
+    vectorizer = model.vectorizer
+    analyzer = vectorizer.build_analyzer()
+    reference_text = reference_df[text_column].fillna("").astype(str)
+    current_text = current_df[text_column].fillna("").astype(str)
+    reference_derived = _text_characteristics(reference_text, analyzer)
+    current_derived = _text_characteristics(current_text, analyzer)
+
+    derived_tests = []
+    for column in reference_derived.columns:
+        test = _numeric_test(reference_derived[column], current_derived[column])
+        derived_tests.append(
+            {
+                "feature": column,
+                **test,
+                "drift_detected": bool(test["p_value"] < numeric_threshold),
+            }
+        )
+
+    reference_tfidf = vectorizer.transform(reference_text.tolist())
+    current_tfidf = vectorizer.transform(current_text.tolist())
+    reference_centroid = np.asarray(reference_tfidf.mean(axis=0)).reshape(-1)
+    current_centroid = np.asarray(current_tfidf.mean(axis=0)).reshape(-1)
+    if np.any(reference_centroid) and np.any(current_centroid):
+        centroid_distance = float(cosine(reference_centroid, current_centroid))
+    else:
+        centroid_distance = 0.0
+
+    reference_tokens = Counter(
+        token for text in reference_text for token in analyzer(text)
+    )
+    current_tokens = Counter(token for text in current_text for token in analyzer(text))
+    combined_tokens = sorted(set(reference_tokens) | set(current_tokens))
+    reference_total = sum(reference_tokens.values()) or 1
+    current_total = sum(current_tokens.values()) or 1
+    reference_distribution = np.asarray(
+        [reference_tokens[token] / reference_total for token in combined_tokens]
+    )
+    current_distribution = np.asarray(
+        [current_tokens[token] / current_total for token in combined_tokens]
+    )
+    token_js_distance = float(
+        jensenshannon(reference_distribution, current_distribution, base=2)
+    )
+    vocabulary = set(vectorizer.vocabulary_)
+    current_analyzed_tokens = [
+        token for text in current_text for token in analyzer(text)
+    ]
+    oov_count = sum(token not in vocabulary for token in current_analyzed_tokens)
+    oov_rate = oov_count / len(current_analyzed_tokens) if current_analyzed_tokens else 0.0
+    top_k = min(50, len(vocabulary))
+    reference_top = {token for token, _ in reference_tokens.most_common(top_k)}
+    current_top = {token for token, _ in current_tokens.most_common(top_k)}
+    top_token_overlap = (
+        len(reference_top & current_top) / len(reference_top | current_top)
+        if reference_top or current_top
+        else 1.0
+    )
+
+    evidently_snapshot, evidently_limitation = _run_evidently(
+        reference_derived,
+        current_derived,
+    )
+    derived_drift_share = sum(
+        item["drift_detected"] for item in derived_tests
+    ) / len(derived_tests)
+    dataset_drift_detected = bool(
+        derived_drift_share >= dataset_drift_threshold
+        or centroid_distance >= 0.1
+        or token_js_distance >= 0.1
+        or oov_rate >= 0.1
+    )
+    payload = {
+        "type": "drift",
+        "method": "Evidently + Text Drift Tests",
+        "status": "completed",
+        "modality": "text",
+        "feature_columns": [text_column],
+        "derived_feature_tests": derived_tests,
+        "tfidf_centroid_cosine_distance": round(centroid_distance, 6),
+        "top_token_js_distance": round(token_js_distance, 6),
+        "oov_rate": round(oov_rate, 6),
+        "top_token_overlap": round(top_token_overlap, 6),
+        "dataset_drift_detected": dataset_drift_detected,
+        "drift_share": round(derived_drift_share, 4),
+        "features_analyzed": len(derived_tests),
+        "drifted_features": [
+            item["feature"] for item in derived_tests if item["drift_detected"]
+        ],
+        "evidently_snapshot": evidently_snapshot,
+        "note": evidently_limitation,
+    }
+    artifact_path = _save_text_drift(
+        payload,
+        provider_name,
+        output_namespace,
+    )
+    decision = "detected" if dataset_drift_detected else "not detected"
+    limitations = [
+        "Statistical text and token-distribution drift does not establish semantic drift.",
+        "Text drift does not by itself prove model performance degradation.",
+    ]
+    if evidently_limitation:
+        limitations.append(evidently_limitation)
+    return completed_evidence(
+        evidence_id=EVIDENCE_ID,
+        layer="drift",
+        method="Evidently + Text Drift Tests",
+        article_mapping=ARTICLE_MAPPING,
+        summary=(
+            "Traditional NLP drift compared fitted-token and document-level "
+            f"distributions; dataset-level drift was {decision}."
+        ),
+        key_findings=[
+            f"TF-IDF centroid cosine distance is {centroid_distance:.4f}.",
+            f"Token-distribution Jensen-Shannon distance is {token_js_distance:.4f}.",
+            f"Current out-of-vocabulary token rate is {oov_rate:.4f}.",
+        ],
+        metrics={
+            key: value
+            for key, value in payload.items()
+            if key not in {"type", "method", "status", "evidently_snapshot"}
+        },
+        artifacts=[artifact_path],
+        limitations=limitations,
+        raw_output={**payload, "output": artifact_path},
+    )
+
+
 def run_drift(
     current_data,
     *,
     reference_data=None,
+    model=None,
+    modality=None,
+    feature_columns=None,
+    sensitive_feature_columns=None,
     target_column: str | None = None,
     provider_name: str | None = None,
     output_namespace: str = "audit",
@@ -163,6 +363,18 @@ def run_drift(
             artifacts=[],
             limitations=[reason],
             raw_output={},
+        )
+
+    if str(modality or "").strip().lower() == "text":
+        return _run_text_drift(
+            reference_df,
+            current_df,
+            model=model,
+            feature_columns=feature_columns,
+            provider_name=provider_name,
+            output_namespace=output_namespace,
+            numeric_threshold=numeric_threshold,
+            dataset_drift_threshold=dataset_drift_threshold,
         )
 
     reference_columns = set(reference_df.columns)

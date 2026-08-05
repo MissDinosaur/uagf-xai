@@ -7,7 +7,7 @@ from collections import Counter
 import math
 
 from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
-from .evidence_methods import LLM_E3_SEMANTIC_DRIFT_INDEX
+from .llm_evidence_methods import LLM_E3_SEMANTIC_DRIFT_INDEX
 
 
 def _token_distribution(texts):

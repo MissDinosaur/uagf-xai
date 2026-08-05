@@ -196,3 +196,52 @@ def test_invalid_stage_b_model_artifact_kind_is_rejected():
                 }
             }
         )
+
+
+def test_talentsift_feature_columns_are_read_from_data_dictionary():
+    context = AuditAdapter.from_audit_report(
+        {
+            "is_llm_or_agentic": False,
+            "verified_modality": "nlp",
+            "client_submission": {
+                "stage_b": {
+                    "task_type": "binary_classification",
+                    "target_column": "shortlist",
+                    "data_dictionary": {"feature_columns": ["cv_text", "cv_text"]},
+                }
+            },
+            "cgsa_csp_satisfiable": True,
+        }
+    )
+
+    assert context.system_type == "traditional_ml"
+    assert context.modality == "text"
+    assert context.feature_columns == ["cv_text"]
+
+
+def test_missing_feature_columns_preserves_none():
+    context = AuditAdapter.from_audit_report(
+        {
+            "client_submission": {
+                "stage_b": {"task_type": "binary_classification"}
+            },
+            "cgsa_csp_satisfiable": True,
+        }
+    )
+
+    assert context.feature_columns is None
+
+
+def test_target_column_cannot_be_declared_as_model_feature():
+    with pytest.raises(ValueError, match="must not include target_column"):
+        AuditAdapter.from_audit_report(
+            {
+                "client_submission": {
+                    "stage_b": {
+                        "task_type": "binary_classification",
+                        "target_column": "shortlist",
+                        "feature_columns": ["cv_text", "shortlist"],
+                    }
+                }
+            }
+        )

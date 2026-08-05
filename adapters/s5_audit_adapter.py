@@ -66,6 +66,7 @@ class AuditContext:
     evaluation_dataset_uri: str | None = None
     target_column: str | None = None
     positive_label: str | int | None = None
+    feature_columns: list[str] | None = None
     sensitive_feature_columns: list[str] = field(default_factory=list)
 
     # LLM / Agentic resources
@@ -113,6 +114,7 @@ def _normalize_modality_value(value) -> Modality:
         "agentic": "text",
         "llm": "text",
         "nlp": "text",
+        "language": "text",
         "natural_language": "text",
         "timeseries": "time_series",
     }
@@ -139,6 +141,22 @@ def _coerce_optional_text(value) -> str | None:
     if value in ("", None):
         return None
     return str(value)
+
+
+def _coerce_optional_string_list(value, field_name: str) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list of non-empty strings.")
+
+    result = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{field_name} must contain only non-empty strings.")
+        normalized = item.strip()
+        if normalized not in result:
+            result.append(normalized)
+    return result
 
 
 def _derive_application_domain(data: dict) -> str:
@@ -261,6 +279,20 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     positive_label = stage_b.get("positive_label")
     positive_label = None if positive_label in ("", None) else positive_label
 
+    data_dictionary = stage_b.get("data_dictionary") or {}
+    if "feature_columns" in data:
+        raw_feature_columns = data["feature_columns"]
+    elif "feature_columns" in stage_b:
+        raw_feature_columns = stage_b["feature_columns"]
+    else:
+        raw_feature_columns = data_dictionary.get("feature_columns")
+    feature_columns = _coerce_optional_string_list(
+        raw_feature_columns,
+        "feature_columns",
+    )
+    if target_column and feature_columns and target_column in feature_columns:
+        raise ValueError("feature_columns must not include target_column.")
+
     sensitive_feature_columns = stage_b.get("sensitive_feature_columns") or []
     if not isinstance(sensitive_feature_columns, list):
         sensitive_feature_columns = [sensitive_feature_columns]
@@ -307,6 +339,7 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         evaluation_dataset_uri=evaluation_dataset_uri,
         target_column=target_column,
         positive_label=positive_label,
+        feature_columns=feature_columns,
         sensitive_feature_columns=sensitive_feature_columns,
         golden_set_uri=golden_set_uri,
         system_prompt_uri=system_prompt_uri,

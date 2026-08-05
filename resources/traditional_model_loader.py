@@ -7,8 +7,14 @@ import warnings
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.compose import ColumnTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from scipy.special import expit, softmax
 
 from .artifact_utils import unwrap_artifact
 
@@ -166,6 +172,135 @@ class EncodedSklearnModel(BaseEstimator, ClassifierMixin):
         )
 
 
+class FittedLogisticCompatibilityView(ClassifierMixin, BaseEstimator):
+    """Read-only sklearn-compatible view over fitted logistic parameters."""
+
+    def __init__(self, estimator):
+        self.estimator = estimator
+        self.classes_ = estimator.classes_
+        self.n_features_in_ = estimator.coef_.shape[1]
+
+    def __sklearn_is_fitted__(self):
+        return True
+
+    def decision_function(self, X):
+        scores = X @ self.estimator.coef_.T + self.estimator.intercept_
+        scores = np.asarray(scores)
+        return scores.reshape(-1) if scores.shape[1] == 1 else scores
+
+    def predict_proba(self, X):
+        scores = self.decision_function(X)
+        if scores.ndim == 1:
+            positive = expit(scores)
+            return np.column_stack([1.0 - positive, positive])
+        return softmax(scores, axis=1)
+
+    def predict(self, X):
+        indices = np.argmax(self.predict_proba(X), axis=1)
+        return self.classes_[indices]
+
+    def fit(self, X, y=None):
+        raise RuntimeError("The fitted S5 estimator must not be retrained.")
+
+
+class SklearnTextModelAdapter:
+    """Expose a fitted TF-IDF sklearn text classifier without refitting it."""
+
+    def __init__(self, pipeline, vectorizer, estimator, text_feature_column):
+        self.underlying_pipeline = pipeline
+        self.vectorizer = vectorizer
+        self.estimator = estimator
+        self.text_feature_column = text_feature_column
+        self.input_adapter = "sklearn_text"
+        self.vectorizer_class = type(vectorizer).__name__
+        self.estimator_class = type(estimator).__name__
+        self.vocabulary_size = len(vectorizer.vocabulary_)
+        self.conformal_estimator = FittedLogisticCompatibilityView(estimator)
+
+    @classmethod
+    def from_artifact(cls, artifact):
+        """Return an adapter only for the supported fitted sklearn text shape."""
+        if not isinstance(artifact, Pipeline) or not artifact.steps:
+            return None
+
+        estimator = artifact.steps[-1][1]
+        if not isinstance(estimator, LogisticRegression):
+            return None
+        if not hasattr(estimator, "coef_") or not hasattr(estimator, "classes_"):
+            return None
+
+        candidates = []
+        for _, component in artifact.steps[:-1]:
+            if not isinstance(component, ColumnTransformer):
+                continue
+            for _, transformer, columns in component.transformers_:
+                if isinstance(transformer, TfidfVectorizer):
+                    candidates.append((transformer, columns))
+                elif isinstance(transformer, Pipeline):
+                    for _, nested in transformer.steps:
+                        if isinstance(nested, TfidfVectorizer):
+                            candidates.append((nested, columns))
+
+        if len(candidates) != 1:
+            return None
+        vectorizer, columns = candidates[0]
+        if not hasattr(vectorizer, "vocabulary_"):
+            return None
+        if isinstance(columns, str):
+            text_columns = [columns]
+        elif isinstance(columns, (list, tuple, np.ndarray)):
+            text_columns = list(columns)
+        else:
+            return None
+        if len(text_columns) != 1 or not isinstance(text_columns[0], str):
+            return None
+        return cls(artifact, vectorizer, estimator, text_columns[0])
+
+    @property
+    def classes_(self):
+        return self.estimator.classes_
+
+    def _raw_texts(self, X) -> list[str]:
+        if isinstance(X, pd.DataFrame):
+            if self.text_feature_column not in X.columns:
+                raise ValueError(
+                    "Text model input is missing required feature column "
+                    f"{self.text_feature_column!r}."
+                )
+            values = X[self.text_feature_column].tolist()
+        elif isinstance(X, pd.Series):
+            values = X.tolist()
+        elif isinstance(X, (list, tuple, np.ndarray)):
+            values = np.asarray(X, dtype=object).reshape(-1).tolist()
+        else:
+            raise TypeError(
+                "Text model input must be a one-column DataFrame, Series, "
+                "or sequence of strings."
+            )
+        if any(not isinstance(value, str) for value in values):
+            raise ValueError("Text model input must contain only non-null strings.")
+        return values
+
+    def _pipeline_frame(self, X) -> pd.DataFrame:
+        return pd.DataFrame({self.text_feature_column: self._raw_texts(X)})
+
+    def prepare_input(self, X):
+        """Transform raw text with the fitted TF-IDF vectorizer."""
+        return self.vectorizer.transform(self._raw_texts(X))
+
+    def predict(self, X):
+        return self.conformal_estimator.predict(self.prepare_input(X))
+
+    def predict_proba(self, X):
+        return self.conformal_estimator.predict_proba(self.prepare_input(X))
+
+    def decision_function(self, X):
+        return self.conformal_estimator.decision_function(self.prepare_input(X))
+
+    def get_feature_names_out(self):
+        return self.vectorizer.get_feature_names_out()
+
+
 class TraditionalModelLoader:
     """Load serialized Traditional ML models and normalize model bundles."""
 
@@ -235,6 +370,8 @@ class TraditionalModelLoader:
             uri=uri,
             path=path,
         )
+        artifact_model = loaded.get("model") if isinstance(loaded, dict) else loaded
+        text_adapter = SklearnTextModelAdapter.from_artifact(artifact_model)
         wrapped_bundle = cls._wrap_bundle(
             loaded,
             uri=uri,
@@ -244,7 +381,17 @@ class TraditionalModelLoader:
             model_type=model_type,
             model_entrypoint=model_entrypoint,
         )
-        final_model = wrapped_bundle if wrapped_bundle is not None else unwrap_artifact(loaded)
+        if text_adapter is not None:
+            final_model = text_adapter
+            print(
+                "[ModelLoader] Loaded fitted sklearn text model adapter "
+                f"with vectorizer={text_adapter.vectorizer_class}, "
+                f"estimator={text_adapter.estimator_class}, "
+                f"text_feature={text_adapter.text_feature_column!r}, "
+                f"vocabulary_size={text_adapter.vocabulary_size}."
+            )
+        else:
+            final_model = wrapped_bundle or unwrap_artifact(loaded)
         if load_warnings:
             try:
                 setattr(final_model, "_uagf_load_warnings", load_warnings)

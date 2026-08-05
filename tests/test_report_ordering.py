@@ -131,10 +131,11 @@ def test_report_sections_use_one_central_order_for_shuffled_results(
     assert "Explainability Evidence — SHAP, LIME and DiCE" in executive
 
     coverage = html.split('<section id="coverage-matrix">', 1)[1].split("</section>", 1)[0]
+    compact_coverage = "".join(coverage.split())
     assert (
-        "<td>Explainability</td><td>Counterfactual explanation</td>"
+        "<td>Explainability</td><td>Counterfactualexplanation</td>"
         "<td>DiCE</td>"
-    ) in coverage
+    ) in compact_coverage
     assert '<span class="method-group-title">Explainability Evidence</span>' in html
     assert "<ul class=\"method-group-items\"><li>" in html
     assert 'class="facts-grid executive-facts-grid"' in html

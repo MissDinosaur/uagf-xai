@@ -1,6 +1,6 @@
 import pytest
 
-from layers.llm.evidence_methods import LLM_GROUNDING
+from layers.llm.llm_evidence_methods import LLM_GROUNDING
 from pipeline.evidence_normalizer import REQUIRED_FIELDS, normalize_evidence_results
 from schema.evidence_schema import EVIDENCE_STATUSES, completed_evidence
 

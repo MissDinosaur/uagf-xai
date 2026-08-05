@@ -13,7 +13,12 @@ _REGRESSION_TASKS = {"regression", "forecasting"}
 def _model_view(model, X):
     """Return the exact fitted estimator and its numeric model-ready input."""
     if hasattr(model, "prepare_input"):
-        return getattr(model, "estimator", model), model.prepare_input(X)
+        estimator = getattr(
+            model,
+            "conformal_estimator",
+            getattr(model, "estimator", model),
+        )
+        return estimator, model.prepare_input(X)
     return model, X
 
 
@@ -28,22 +33,35 @@ def _split_calibration_and_measurement(X, y, task_type):
             "measurement use disjoint subsets."
         )
 
-    split_index = sample_count // 2
-    if hasattr(X, "iloc"):
-        X_calibration = X.iloc[:split_index]
-        X_measurement = X.iloc[split_index:]
-    else:
-        X_array = np.asarray(X)
-        X_calibration = X_array[:split_index]
-        X_measurement = X_array[split_index:]
+    if task_type in _CLASSIFICATION_TASKS:
+        from sklearn.model_selection import StratifiedShuffleSplit
 
+        splitter = StratifiedShuffleSplit(
+            n_splits=1,
+            test_size=0.5,
+            random_state=42,
+        )
+        calibration_indices, measurement_indices = next(
+            splitter.split(np.zeros(sample_count), np.asarray(y))
+        )
+    else:
+        split_index = sample_count // 2
+        calibration_indices = np.arange(split_index)
+        measurement_indices = np.arange(split_index, sample_count)
+
+    if hasattr(X, "iloc"):
+        X_calibration = X.iloc[calibration_indices]
+        X_measurement = X.iloc[measurement_indices]
+    else:
+        X_calibration = X[calibration_indices]
+        X_measurement = X[measurement_indices]
     if hasattr(y, "iloc"):
-        y_calibration = y.iloc[:split_index]
-        y_measurement = y.iloc[split_index:]
+        y_calibration = y.iloc[calibration_indices]
+        y_measurement = y.iloc[measurement_indices]
     else:
         y_array = np.asarray(y)
-        y_calibration = y_array[:split_index]
-        y_measurement = y_array[split_index:]
+        y_calibration = y_array[calibration_indices]
+        y_measurement = y_array[measurement_indices]
 
     if task_type in _CLASSIFICATION_TASKS:
         calibration_classes = set(np.asarray(y_calibration).tolist())
@@ -53,6 +71,12 @@ def _split_calibration_and_measurement(X, y, task_type):
                 "The deterministic MAPIE calibration subset does not contain "
                 "every observed class. Provide a larger or suitably ordered "
                 "evaluation dataset."
+            )
+        measurement_classes = set(np.asarray(y_measurement).tolist())
+        if measurement_classes != observed_classes:
+            raise ValueError(
+                "The deterministic MAPIE measurement subset does not contain "
+                "every observed class."
             )
 
     return X_calibration, y_calibration, X_measurement, y_measurement
@@ -141,13 +165,25 @@ def _regression_uncertainty(estimator, X, y, confidence_level, task_type):
     }
 
 
-def run_uncertainty(model, X, y, task_type=None):
+def run_uncertainty(model, X, y, task_type=None, modality=None):
     """Generate MAPIE evidence without refitting the S5-provided estimator."""
     if y is None:
         raise ValueError("MAPIE uncertainty analysis requires evaluation labels.")
 
     normalized_task = str(task_type or "").strip().lower()
     estimator, X_model = _model_view(model, X)
+    try:
+        from scipy.sparse import issparse
+
+        if issparse(X_model):
+            X_model = X_model.toarray()
+    except ImportError:
+        pass
+    input_representation = (
+        "tfidf_sparse"
+        if str(modality or "").strip().lower() == "text"
+        else "model_ready_numeric"
+    )
     confidence_level = 0.9
 
     try:
@@ -184,12 +220,21 @@ def run_uncertainty(model, X, y, task_type=None):
         "method": "MAPIE (Conformal Prediction)",
         "status": "completed",
         "task_type": normalized_task,
+        "input_representation": input_representation,
+        "estimator_class": type(getattr(model, "estimator", estimator)).__name__,
         "estimator_mode": "prefit",
-        "calibration_policy": "first_half_of_evaluation_data",
+        "calibration_policy": (
+            "deterministic_stratified_half_split"
+            if normalized_task in _CLASSIFICATION_TASKS
+            else "first_half_of_evaluation_data"
+        ),
         "confidence_level": confidence_level,
         **metrics,
         "coverage": round(coverage, 4),
         "mean_interval_width": round(metrics["mean_interval_width"], 4),
+        "mean_prediction_set_size": round(metrics["mean_interval_width"], 4)
+        if normalized_task in _CLASSIFICATION_TASKS
+        else None,
         "coverage_gap": round(abs(confidence_level - coverage), 4),
     }
     print("Uncertainty estimation completed.")

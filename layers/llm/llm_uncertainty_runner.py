@@ -4,7 +4,7 @@ Uses multi-sample generation consistency as an uncertainty proxy.
 """
 
 from .llm_runtime import build_llm_skip_result, llm_execution_is_loadable
-from .evidence_methods import LLM_E2_SELF_CONSISTENCY_SCORE
+from .llm_evidence_methods import LLM_E2_SELF_CONSISTENCY_SCORE
 
 
 def run_llm_uncertainty(generator, llm_payload, resource_context=None):

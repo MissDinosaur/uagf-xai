@@ -40,6 +40,11 @@ def _ordered_report_sections(results):
             ),
         }
         for key in ordered_result_keys(results)
+        if key == "_cbep_trace"
+        or not (
+            isinstance(results[key], dict)
+            and str(results[key].get("status", "")).lower() == "not_applicable"
+        )
     ]
 
 
@@ -74,10 +79,17 @@ def generate_report(
     )
     pdf_path = str(Path(output_path).with_suffix(".pdf"))
 
+    supplied_runtime_context = runtime_context or {}
     report_runtime_context = collect_runtime_environment(
-        (runtime_context or {}).get("run_timestamp")
+        supplied_runtime_context.get("run_timestamp")
     )
-    report_runtime_context.update(runtime_context or {})
+    report_runtime_context.update(
+        {
+            key: value
+            for key, value in supplied_runtime_context.items()
+            if key != "run_timestamp"
+        }
+    )
     report_runtime_context.update(
         {
             "html_report_path": output_path,

@@ -323,9 +323,18 @@ def build_executive_summary(results, audit_context, governance_context, provider
             {"label": "Audit case", "value": provider_name},
             {"label": "Risk tier", "value": _display(_value(audit_context, "risk_tier"))},
             {"label": "Application domain", "value": _display(_value(audit_context, "application_domain"))},
-            {"label": "System / task", "value": f"{_display(_value(audit_context, 'system_type'))} / {_display(_value(audit_context, 'task_type'))}"},
+            {
+                "label": "System type / Modality",
+                "value": (
+                    f"{_display(_value(audit_context, 'system_type'))} / "
+                    f"{_display(_value(audit_context, 'modality'))}"
+                ),
+            },
+            {
+                "label": "Task type",
+                "value": _display(_value(audit_context, "task_type")),
+            },
             {"label": "Governance score", "value": _display(_value(governance_context, "governance_score"))},
-            {"label": "Governance verdict", "value": _display(_value(governance_context, "governance_verdict"))},
             _grouped_method_fact("Selected methods", selected),
             _grouped_method_fact("Completed methods", completed_tokens),
             _grouped_method_fact("Skipped / unavailable", skipped_tokens),
@@ -342,7 +351,6 @@ def build_audit_scope(audit_context, governance_context, resource_context=None):
         {"label": "S5 risk tier", "value": _display(_value(audit_context, "risk_tier"))},
         {"label": "Application domain", "value": _display(_value(audit_context, "application_domain"))},
         {"label": "System type / modality", "value": f"{_display(_value(audit_context, 'system_type'))} / {_display(_value(audit_context, 'modality'))}"},
-        {"label": "Task type", "value": _display(_value(audit_context, "task_type"))},
         {"label": "CSP satisfied", "value": _display(_value(audit_context, "csp_satisfied"))},
     ]
     contract_rows = [
@@ -350,6 +358,18 @@ def build_audit_scope(audit_context, governance_context, resource_context=None):
         {"label": "Positive label", "value": _display(_value(audit_context, "positive_label"))},
         {"label": "Sensitive features", "value": _display(_value(audit_context, "sensitive_feature_columns", []), "None configured")},
     ]
+    modality = str(_value(audit_context, "modality", "") or "").lower()
+    if modality == "text":
+        contract_rows.insert(
+            2,
+            {
+                "label": "Model feature columns",
+                "value": _display(
+                    _value(audit_context, "feature_columns"),
+                    "Legacy target-drop fallback",
+                ),
+            },
+        )
     domain_scores = _value(governance_context, "domain_scores", {}) or {}
     return {
         "common_rows": common_rows,
@@ -391,6 +411,7 @@ def build_resource_summary(audit_context, resource_context):
         )
 
     is_llm = _is_llm(audit_context)
+    is_text = str(_value(audit_context, "modality", "") or "").lower() == "text"
     contract_name = (
         "LLM / Agentic golden-set contract"
         if is_llm
@@ -413,6 +434,30 @@ def build_resource_summary(audit_context, resource_context):
         {"label": "Model artifact status", "value": _status_display(status)},
         {"label": "Loaded metadata files", "value": _display(context.get("loaded_metadata_files", []), "None")},
     ]
+    if is_text:
+        text_rows = [
+            {
+                "label": "Model input adapter",
+                "value": _display(context.get("input_adapter")),
+            },
+            {
+                "label": "Text feature column",
+                "value": _display(context.get("text_feature_column")),
+            },
+            {
+                "label": "TF-IDF vectorizer",
+                "value": _display(context.get("vectorizer_class")),
+            },
+            {
+                "label": "Final estimator",
+                "value": _display(context.get("estimator_class")),
+            },
+            {
+                "label": "TF-IDF vocabulary size",
+                "value": _display(context.get("vocabulary_size")),
+            },
+        ]
+        rows[9:9] = text_rows
 
     if is_llm:
         golden_count = context.get("golden_set_records")
@@ -454,13 +499,19 @@ def build_cbep_decision_table(results, audit_context):
     selected = _selected_tokens(results)
     incompatible = _incompatible_tokens(results)
     task_type = str(_value(audit_context, "task_type", "") or "")
+    assessment = trace.get("task_compatibility_assessment", {})
+    trace_reasons = (
+        assessment.get("incompatibility_reasons", {})
+        if isinstance(assessment, dict)
+        else {}
+    )
     rows = []
     for token in _candidate_tokens(results, audit_context):
         info = METHOD_CATALOG[token]
         if token in selected:
             reason = f"Selected by CBEP and compatible with {task_type}."
         elif token in incompatible:
-            reason = _compatibility_reason(token, task_type)
+            reason = trace_reasons.get(token) or _compatibility_reason(token, task_type)
         else:
             reason = "Not required by the minimum sufficient evidence plan."
         rows.append({
@@ -473,8 +524,8 @@ def build_cbep_decision_table(results, audit_context):
     intro = (
         "CBEP is a deterministic, constraint-informed planning procedure inspired "
         "by CSP theory. It creates an article-, governance-, system-, and risk-driven "
-        "plan and then applies task compatibility screening. Incompatible methods "
-        "are excluded to avoid misleading or invalid evidence."
+        "plan and then applies task and modality compatibility screening. "
+        "Incompatible methods are excluded to avoid misleading or invalid evidence."
     )
     if task_type in {"forecasting", "anomaly_detection"}:
         intro += (
@@ -564,7 +615,6 @@ def build_evidence_coverage_matrix(results, audit_context):
             "evidence_type": info["evidence_type"],
             "method": info["short_name"],
             "status": format_status_badge(status),
-            "articles": ", ".join(result.get("article_mapping", [])),
             "main_output": _main_output(token, result, status),
             "limitation": _result_limitation(token, result, status, audit_context),
         })
@@ -616,8 +666,13 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
 
     if token == "shap":
         ranked = evidence_metrics.get("feature_importance", [])
+        is_text = evidence_metrics.get("feature_semantics") == "tokens"
         table = {
-            "headers": ["Rank", "Feature", "Mean absolute importance"],
+            "headers": [
+                "Rank",
+                "Token" if is_text else "Feature",
+                "Mean absolute SHAP value" if is_text else "Mean absolute importance",
+            ],
             "rows": [
                 [index, item.get("feature"), item.get("importance")]
                 for index, item in enumerate(ranked[:10], 1)
@@ -641,13 +696,23 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
             ],
         }
     elif token == "lime":
-        table = {
-            "headers": ["Feature condition", "Local weight"],
-            "rows": [
-                [item.get("feature_condition"), item.get("weight")]
-                for item in evidence_metrics.get("feature_contributions", [])
-            ],
-        }
+        contributions = evidence_metrics.get("token_contributions") or []
+        if contributions:
+            table = {
+                "headers": ["Token or phrase", "Local weight"],
+                "rows": [
+                    [item.get("token_or_phrase"), item.get("weight")]
+                    for item in contributions
+                ],
+            }
+        else:
+            table = {
+                "headers": ["Feature condition", "Local weight"],
+                "rows": [
+                    [item.get("feature_condition"), item.get("weight")]
+                    for item in evidence_metrics.get("feature_contributions", [])
+                ],
+            }
     elif token == "dice":
         table_intro = (
             "The table below shows the first generated counterfactual. The full "
@@ -704,6 +769,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                 ],
             }
     elif token == "drift":
+        text_tests = evidence_metrics.get("derived_feature_tests") or []
         table = {
             "headers": [
                 "Rank",
@@ -725,7 +791,8 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                     "Yes" if item.get("drift_detected") else "No",
                 ]
                 for index, item in enumerate(
-                    evidence_metrics.get("top_drifted_columns", []), 1
+                    text_tests or evidence_metrics.get("top_drifted_columns", []),
+                    1,
                 )
             ],
         }

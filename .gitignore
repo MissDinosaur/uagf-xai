@@ -1,5 +1,7 @@
 data/
 venv310/
+venv312/
+venv312_sklearn18/
 outputs/
 z_docs/
 

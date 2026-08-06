@@ -14,7 +14,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from scipy.special import expit, softmax
 
 from .artifact_utils import unwrap_artifact
 
@@ -172,39 +171,13 @@ class EncodedSklearnModel(BaseEstimator, ClassifierMixin):
         )
 
 
-class FittedLogisticCompatibilityView(ClassifierMixin, BaseEstimator):
-    """Read-only sklearn-compatible view over fitted logistic parameters."""
-
-    def __init__(self, estimator):
-        self.estimator = estimator
-        self.classes_ = estimator.classes_
-        self.n_features_in_ = estimator.coef_.shape[1]
-
-    def __sklearn_is_fitted__(self):
-        return True
-
-    def decision_function(self, X):
-        scores = X @ self.estimator.coef_.T + self.estimator.intercept_
-        scores = np.asarray(scores)
-        return scores.reshape(-1) if scores.shape[1] == 1 else scores
-
-    def predict_proba(self, X):
-        scores = self.decision_function(X)
-        if scores.ndim == 1:
-            positive = expit(scores)
-            return np.column_stack([1.0 - positive, positive])
-        return softmax(scores, axis=1)
-
-    def predict(self, X):
-        indices = np.argmax(self.predict_proba(X), axis=1)
-        return self.classes_[indices]
-
-    def fit(self, X, y=None):
-        raise RuntimeError("The fitted S5 estimator must not be retrained.")
-
-
 class SklearnTextModelAdapter:
-    """Expose a fitted TF-IDF sklearn text classifier without refitting it."""
+    """Adapt raw text shapes while delegating inference to the S5 Pipeline.
+
+    The adapter never copies fitted parameters or reproduces classifier logic.
+    Predictions use the original fitted Pipeline, while model-ready TF-IDF input
+    for explainers uses the original fitted vectorizer's transform() method.
+    """
 
     def __init__(self, pipeline, vectorizer, estimator, text_feature_column):
         self.underlying_pipeline = pipeline
@@ -215,7 +188,6 @@ class SklearnTextModelAdapter:
         self.vectorizer_class = type(vectorizer).__name__
         self.estimator_class = type(estimator).__name__
         self.vocabulary_size = len(vectorizer.vocabulary_)
-        self.conformal_estimator = FittedLogisticCompatibilityView(estimator)
 
     @classmethod
     def from_artifact(cls, artifact):
@@ -289,13 +261,13 @@ class SklearnTextModelAdapter:
         return self.vectorizer.transform(self._raw_texts(X))
 
     def predict(self, X):
-        return self.conformal_estimator.predict(self.prepare_input(X))
+        return self.underlying_pipeline.predict(self._pipeline_frame(X))
 
     def predict_proba(self, X):
-        return self.conformal_estimator.predict_proba(self.prepare_input(X))
+        return self.underlying_pipeline.predict_proba(self._pipeline_frame(X))
 
     def decision_function(self, X):
-        return self.conformal_estimator.decision_function(self.prepare_input(X))
+        return self.underlying_pipeline.decision_function(self._pipeline_frame(X))
 
     def get_feature_names_out(self):
         return self.vectorizer.get_feature_names_out()

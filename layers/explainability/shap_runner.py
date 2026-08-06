@@ -103,8 +103,9 @@ def _run_text_shap(model, X_raw, shap, plt, output_path):
     background = X_tfidf[background_indices]
     explained = X_tfidf[explanation_indices]
 
-    linear_model = (estimator.coef_, estimator.intercept_)
-    explainer = shap.LinearExplainer(linear_model, background)
+    # SHAP 0.49 accepts the original fitted LogisticRegression directly, so no
+    # coefficient tuple or replacement estimator is required.
+    explainer = shap.LinearExplainer(estimator, background)
     shap_values = explainer(explained)
     values = _get_shap_values_array(shap_values)
     if values.ndim == 3:

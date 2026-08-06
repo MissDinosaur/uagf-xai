@@ -13,11 +13,7 @@ _REGRESSION_TASKS = {"regression", "forecasting"}
 def _model_view(model, X):
     """Return the exact fitted estimator and its numeric model-ready input."""
     if hasattr(model, "prepare_input"):
-        estimator = getattr(
-            model,
-            "conformal_estimator",
-            getattr(model, "estimator", model),
-        )
+        estimator = getattr(model, "estimator", model)
         return estimator, model.prepare_input(X)
     return model, X
 

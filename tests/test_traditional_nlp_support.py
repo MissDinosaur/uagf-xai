@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import joblib
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -11,7 +13,7 @@ from api.audit_api import _build_evaluation_views
 from layers.drift import evidently_runner
 from layers.explainability import lime_runner, shap_runner
 from layers.fairness.fairlearn_runner import run_fairness
-from layers.uncertainty.mapie_runner import run_uncertainty
+from layers.uncertainty.mapie_runner import _model_view, run_uncertainty
 from resources.model_loader import ModelLoader
 from resources.traditional_model_loader import SklearnTextModelAdapter
 
@@ -91,6 +93,113 @@ def test_talentsift_artifact_loads_as_fitted_text_adapter(talentsift_model):
     assert len(model.predict(X_model)) == 3
     assert model.predict_proba(X_model).shape == (3, 2)
     assert not any(name.startswith("feature_") for name in model.get_feature_names_out())
+
+
+def test_text_adapter_delegates_predictions_to_original_pipeline(
+    talentsift_model,
+    monkeypatch,
+):
+    evaluation = pd.read_csv(CASE_DIR / "datasets/evaluation_dataset.csv")
+    X_model = evaluation[["cv_text"]].head(3)
+    pipeline = talentsift_model.underlying_pipeline
+    original_predict = pipeline.predict
+    original_predict_proba = pipeline.predict_proba
+    calls = {"predict": [], "predict_proba": []}
+
+    def predict_spy(frame):
+        calls["predict"].append(frame.copy())
+        return original_predict(frame)
+
+    def predict_proba_spy(frame):
+        calls["predict_proba"].append(frame.copy())
+        return original_predict_proba(frame)
+
+    monkeypatch.setattr(pipeline, "predict", predict_spy)
+    monkeypatch.setattr(pipeline, "predict_proba", predict_proba_spy)
+
+    predictions = talentsift_model.predict(X_model)
+    probabilities = talentsift_model.predict_proba(X_model["cv_text"].tolist())
+
+    assert predictions.shape == (3,)
+    assert probabilities.shape == (3, 2)
+    assert len(calls["predict"]) == 1
+    assert len(calls["predict_proba"]) == 1
+    assert list(calls["predict"][0].columns) == ["cv_text"]
+    assert list(calls["predict_proba"][0].columns) == ["cv_text"]
+
+
+def test_prepare_input_calls_original_fitted_vectorizer_transform(
+    talentsift_model,
+    monkeypatch,
+):
+    evaluation = pd.read_csv(CASE_DIR / "datasets/evaluation_dataset.csv")
+    X_model = evaluation[["cv_text"]].head(3)
+    vectorizer = talentsift_model.vectorizer
+    original_transform = vectorizer.transform
+    calls = []
+
+    def transform_spy(raw_texts):
+        calls.append(list(raw_texts))
+        return original_transform(raw_texts)
+
+    monkeypatch.setattr(vectorizer, "transform", transform_spy)
+    prepared = talentsift_model.prepare_input(X_model)
+
+    assert prepared.shape == (3, 742)
+    assert len(calls) == 1
+    assert len(calls[0]) == 3
+
+
+def test_text_adapter_never_calls_training_or_clone_operations(
+    talentsift_model,
+    monkeypatch,
+):
+    evaluation = pd.read_csv(CASE_DIR / "datasets/evaluation_dataset.csv")
+    X_model = evaluation[["cv_text"]].head(4)
+
+    def reject_training(*args, **kwargs):
+        raise AssertionError("The fitted S5 artifact must never be trained or cloned.")
+
+    objects_and_methods = (
+        (talentsift_model.underlying_pipeline, "fit"),
+        (talentsift_model.vectorizer, "fit"),
+        (talentsift_model.vectorizer, "fit_transform"),
+        (talentsift_model.estimator, "fit"),
+        (talentsift_model.estimator, "partial_fit"),
+    )
+    for target, method_name in objects_and_methods:
+        if hasattr(target, method_name):
+            monkeypatch.setattr(target, method_name, reject_training)
+
+    monkeypatch.setattr(
+        "resources.traditional_model_loader.clone",
+        reject_training,
+    )
+
+    talentsift_model.prepare_input(X_model)
+    talentsift_model.predict(X_model)
+    talentsift_model.predict_proba(X_model)
+    talentsift_model.decision_function(X_model)
+
+
+def test_original_fitted_estimator_attributes_remain_unchanged(talentsift_model):
+    evaluation = pd.read_csv(CASE_DIR / "datasets/evaluation_dataset.csv")
+    X_model = evaluation[["cv_text"]]
+    estimator = talentsift_model.estimator
+    estimator_hash = joblib.hash(estimator)
+    coefficients = estimator.coef_.copy()
+    intercept = estimator.intercept_.copy()
+    classes = estimator.classes_.copy()
+
+    talentsift_model.prepare_input(X_model)
+    talentsift_model.predict(X_model)
+    talentsift_model.predict_proba(X_model)
+    talentsift_model.decision_function(X_model)
+
+    assert joblib.hash(estimator) == estimator_hash
+    np.testing.assert_array_equal(estimator.coef_, coefficients)
+    np.testing.assert_array_equal(estimator.intercept_, intercept)
+    np.testing.assert_array_equal(estimator.classes_, classes)
 
 
 def test_text_shap_reports_fitted_vocabulary_tokens(
@@ -180,6 +289,62 @@ def test_text_mapie_uses_transform_without_refitting(talentsift_model, monkeypat
     assert result["input_representation"] == "tfidf_sparse"
     assert result["estimator_class"] == "LogisticRegression"
     assert 0.0 <= result["coverage"] <= 1.0
+
+
+def test_text_mapie_uses_original_fitted_estimator(talentsift_model, monkeypatch):
+    evaluation = pd.read_csv(CASE_DIR / "datasets/evaluation_dataset.csv")
+    X_model = evaluation[["cv_text"]]
+    y = evaluation["shortlist"]
+    estimator = talentsift_model.estimator
+    selected_estimator, prepared = _model_view(talentsift_model, X_model)
+    original_predict = estimator.predict
+    original_predict_proba = estimator.predict_proba
+    calls = {"predict": 0, "predict_proba": 0}
+
+    def predict_spy(values):
+        calls["predict"] += 1
+        return original_predict(values)
+
+    def predict_proba_spy(values):
+        calls["predict_proba"] += 1
+        return original_predict_proba(values)
+
+    monkeypatch.setattr(estimator, "predict", predict_spy)
+    monkeypatch.setattr(estimator, "predict_proba", predict_proba_spy)
+
+    result = run_uncertainty(
+        talentsift_model,
+        X_model,
+        y,
+        task_type="binary_classification",
+        modality="text",
+    )
+
+    assert selected_estimator is estimator
+    assert prepared.shape == (80, 742)
+    assert result["status"] == "completed"
+    assert calls["predict_proba"] > 0
+    assert calls["predict"] > 0
+
+
+def test_talentsift_production_code_has_no_parameter_inference_workaround():
+    loader_source = Path("resources/traditional_model_loader.py").read_text(
+        encoding="utf-8"
+    )
+    mapie_source = Path("layers/uncertainty/mapie_runner.py").read_text(
+        encoding="utf-8"
+    )
+    shap_source = Path("layers/explainability/shap_runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "FittedLogisticCompatibilityView" not in loader_source
+    assert "conformal_estimator" not in loader_source + mapie_source
+    assert "expit" not in loader_source
+    assert "softmax" not in loader_source
+    assert "X @ self.estimator.coef_" not in loader_source
+    assert "np.argmax(self.predict_proba" not in loader_source
+    assert "linear_model = (estimator.coef_, estimator.intercept_)" not in shap_source
 
 
 def test_text_drift_uses_only_declared_text_feature(

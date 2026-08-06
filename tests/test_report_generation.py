@@ -489,6 +489,14 @@ def test_report_renders_structured_dice_evidence_under_explainability(
         summary="Structured counterfactual explanation.",
         key_findings=["One counterfactual was generated."],
         metrics={
+            "counterfactual_policy_source": "s5_immutable_exclusions",
+            "counterfactual_policy_status": "validated",
+            "counterfactual_actionable_feature_allowlist": None,
+            "excluded_sensitive_features": ["personal_status", "foreign_worker"],
+            "excluded_immutable_features": ["age", "credit_history"],
+            "excluded_non_actionable_features": [],
+            "features_to_vary": ["income", "duration"],
+            "policy_violation_detected": False,
             "counterfactuals_count": 1,
             "original_prediction": 1,
             "desired_class": "opposite",
@@ -522,7 +530,15 @@ def test_report_renders_structured_dice_evidence_under_explainability(
         },
         artifacts=["outputs/dice/test_counterfactuals.json"],
         limitations=["Domain review is required."],
-        raw_output={"counterfactuals": [{"changed_features": []}]},
+        raw_output={
+            "counterfactual_policy_source": "s5_immutable_exclusions",
+            "counterfactual_policy_status": "validated",
+            "excluded_sensitive_features": ["personal_status", "foreign_worker"],
+            "excluded_immutable_features": ["age", "credit_history"],
+            "features_to_vary": ["income", "duration"],
+            "policy_violation_detected": False,
+            "counterfactuals": [{"changed_features": []}],
+        },
     )
 
     report_generator.generate_report(
@@ -542,6 +558,14 @@ def test_report_renders_structured_dice_evidence_under_explainability(
     assert "Original Prediction" in html
     assert "Desired Class" in html
     assert "Changed Features Count" in html
+    assert "Counterfactual policy item" in html
+    assert "Policy source" in html
+    assert "s5_immutable_exclusions" in html
+    assert "Policy validation status" in html
+    assert "personal_status, foreign_worker" in html
+    assert "age, credit_history" in html
+    assert "income, duration" in html
+    assert html.count("s5_immutable_exclusions") >= 2
     assert "1 (label meaning unavailable)" in html
     assert "0 (label meaning unavailable)" in html
     assert (

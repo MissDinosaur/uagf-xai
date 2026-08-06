@@ -8,6 +8,9 @@ def test_audit_context_does_not_expose_output_namespace():
 
 
 def test_traditional_stage_b_fields_are_mapped(traditional_s5_json):
+    stage_b = traditional_s5_json["client_submission"]["stage_b"]
+    stage_b["counterfactual_actionable_feature_columns"] = ["income"]
+    stage_b["counterfactual_immutable_feature_columns"] = ["age"]
     context = AuditAdapter.from_audit_report(traditional_s5_json)
 
     assert context.system_type == "traditional_ml"
@@ -22,6 +25,16 @@ def test_traditional_stage_b_fields_are_mapped(traditional_s5_json):
     assert context.target_column == "target"
     assert context.positive_label == 1
     assert context.sensitive_feature_columns == ["gender"]
+    assert context.counterfactual_actionable_feature_columns == ["income"]
+    assert context.counterfactual_immutable_feature_columns == ["age"]
+
+
+def test_duplicate_counterfactual_policy_columns_are_rejected(traditional_s5_json):
+    stage_b = traditional_s5_json["client_submission"]["stage_b"]
+    stage_b["counterfactual_immutable_feature_columns"] = ["age", "age"]
+
+    with pytest.raises(ValueError, match="must not contain duplicate columns"):
+        AuditAdapter.from_audit_report(traditional_s5_json)
 
 
 def test_nested_stage_b_fields_are_mapped():

@@ -141,6 +141,8 @@ def execute(
     modality=None,
     positive_label=1,
     target_column=None,
+    counterfactual_actionable_features=None,
+    counterfactual_immutable_features=None,
 ):
 
     results = {}
@@ -281,6 +283,9 @@ def execute(
                     provider_name=provider_name,
                     output_namespace=output_namespace,
                     sensitive_features=sensitive_features,
+                    actionable_features=counterfactual_actionable_features,
+                    immutable_features=counterfactual_immutable_features,
+                    target_column=target_column,
                 )
             )
         else:

@@ -285,6 +285,12 @@ def audit_with_detailed_data(
         modality=audit_context.modality,
         positive_label=getattr(audit_context, "positive_label", 1),
         target_column=getattr(audit_context, "target_column", None),
+        counterfactual_actionable_features=getattr(
+            audit_context, "counterfactual_actionable_feature_columns", None
+        ),
+        counterfactual_immutable_features=getattr(
+            audit_context, "counterfactual_immutable_feature_columns", []
+        ),
     )
 
     results["_cbep_trace"] = {

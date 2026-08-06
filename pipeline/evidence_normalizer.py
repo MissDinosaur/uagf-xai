@@ -91,11 +91,14 @@ def _skipped_or_failed(token: str, raw: dict) -> dict[str, Any] | None:
     catalog = EVIDENCE_CATALOG[token]
     reason = str(raw.get("reason") or raw.get("error") or "No reason was provided.")
     factory = skipped_evidence if status == "skipped" else failed_evidence
+    metrics = {}
+    if token == "dice":
+        metrics = _dice_policy_metrics(raw)
     return factory(
         **_base_payload(token, raw),
         summary=f"{catalog['method']} {status}: {reason}",
         key_findings=[],
-        metrics={},
+        metrics=metrics,
         limitations=[reason],
     )
 
@@ -293,6 +296,23 @@ def _normalize_drift(raw: dict) -> dict:
     )
 
 
+def _dice_policy_metrics(raw: dict) -> dict:
+    return {
+        "counterfactual_policy_source": raw.get("counterfactual_policy_source"),
+        "counterfactual_policy_status": raw.get("counterfactual_policy_status"),
+        "counterfactual_actionable_feature_allowlist": deepcopy(
+            raw.get("counterfactual_actionable_feature_allowlist")
+        ),
+        "excluded_sensitive_features": list(raw.get("excluded_sensitive_features") or []),
+        "excluded_immutable_features": list(raw.get("excluded_immutable_features") or []),
+        "excluded_non_actionable_features": list(
+            raw.get("excluded_non_actionable_features") or []
+        ),
+        "features_to_vary": list(raw.get("features_to_vary") or []),
+        "policy_violation_detected": bool(raw.get("policy_violation_detected")),
+    }
+
+
 def _normalize_dice(raw: dict) -> dict:
     counterfactuals = deepcopy(raw.get("counterfactuals") or [])
     count = raw.get("counterfactuals_count", len(counterfactuals))
@@ -321,6 +341,7 @@ def _normalize_dice(raw: dict) -> dict:
         ),
         key_findings=findings,
         metrics={
+            **_dice_policy_metrics(raw),
             "counterfactuals_count": count,
             "original_prediction": raw.get("original_prediction"),
             "original_prediction_proba": deepcopy(

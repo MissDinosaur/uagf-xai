@@ -296,6 +296,7 @@
         <p>{{ finding.narrative }}</p>
         {% if finding.key_findings %}<ul>{% for item in finding.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
         {% if finding.metrics %}<div class="facts-grid">{% for metric in finding.metrics %}<div class="fact"><span class="fact-label">{{ metric.label }}</span><span class="fact-value">{{ metric.value }}</span></div>{% endfor %}</div>{% endif %}
+        {% if finding.policy_table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.policy_table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.policy_table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.table_intro %}<p>{{ finding.table_intro }}</p>{% endif %}
         {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.secondary_table_title %}<h3>{{ finding.secondary_table_title }}</h3>{% endif %}

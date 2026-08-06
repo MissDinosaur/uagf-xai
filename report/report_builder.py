@@ -667,6 +667,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     metric_cards = []
     table = None
     table_intro = None
+    policy_table = None
     secondary_table = None
     secondary_table_title = None
 
@@ -720,6 +721,53 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                 ],
             }
     elif token == "dice":
+        policy_table = {
+            "headers": ["Counterfactual policy item", "Applied value"],
+            "rows": [
+                [
+                    "Policy source",
+                    _display(evidence_metrics.get("counterfactual_policy_source")),
+                ],
+                [
+                    "Policy validation status",
+                    _display(evidence_metrics.get("counterfactual_policy_status")),
+                ],
+                [
+                    "Actionable feature allowlist",
+                    _display(
+                        evidence_metrics.get(
+                            "counterfactual_actionable_feature_allowlist"
+                        ),
+                        "Not supplied",
+                    ),
+                ],
+                [
+                    "Excluded sensitive features",
+                    _display(evidence_metrics.get("excluded_sensitive_features"), "None"),
+                ],
+                [
+                    "Excluded immutable features",
+                    _display(
+                        evidence_metrics.get("excluded_immutable_features"), "None"
+                    ),
+                ],
+                [
+                    "Excluded non-actionable features",
+                    _display(
+                        evidence_metrics.get("excluded_non_actionable_features"),
+                        "None",
+                    ),
+                ],
+                [
+                    "Actual features to vary",
+                    _display(evidence_metrics.get("features_to_vary"), "None"),
+                ],
+                [
+                    "Policy violation detected",
+                    _display(evidence_metrics.get("policy_violation_detected", False)),
+                ],
+            ],
+        }
         table_intro = (
             "The table below shows the first generated counterfactual. The full "
             "structured JSON artifact contains all generated counterfactuals."
@@ -807,6 +855,12 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
         if key == "runtime_seconds" or isinstance(value, (dict, list, tuple)):
             continue
         if token == "dice" and key in {
+            "counterfactual_policy_source",
+            "counterfactual_policy_status",
+            "policy_violation_detected",
+        }:
+            continue
+        if token == "dice" and key in {
             "original_prediction",
             "counterfactual_prediction",
         }:
@@ -835,6 +889,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
         "narrative": result.get("summary") or "No evidence summary was provided.",
         "key_findings": list(result.get("key_findings") or []),
         "metrics": metric_cards,
+        "policy_table": policy_table,
         "table": table,
         "table_intro": table_intro,
         "secondary_table": secondary_table,

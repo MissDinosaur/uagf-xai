@@ -68,6 +68,8 @@ class AuditContext:
     positive_label: str | int | None = None
     feature_columns: list[str] | None = None
     sensitive_feature_columns: list[str] = field(default_factory=list)
+    counterfactual_actionable_feature_columns: list[str] | None = None
+    counterfactual_immutable_feature_columns: list[str] = field(default_factory=list)
 
     # LLM / Agentic resources
     golden_set_uri: str | None = None
@@ -156,6 +158,22 @@ def _coerce_optional_string_list(value, field_name: str) -> list[str] | None:
         normalized = item.strip()
         if normalized not in result:
             result.append(normalized)
+    return result
+
+
+def _coerce_policy_columns(value, field_name: str, default):
+    if value is None:
+        return default
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list of non-empty strings.")
+    result = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{field_name} must contain only non-empty strings.")
+        normalized = item.strip()
+        if normalized in result:
+            raise ValueError(f"{field_name} must not contain duplicate columns.")
+        result.append(normalized)
     return result
 
 
@@ -299,6 +317,16 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     sensitive_feature_columns = [
         str(item) for item in sensitive_feature_columns if item not in ("", None)
     ]
+    actionable_columns = _coerce_policy_columns(
+        stage_b.get("counterfactual_actionable_feature_columns"),
+        "counterfactual_actionable_feature_columns",
+        None,
+    )
+    immutable_columns = _coerce_policy_columns(
+        stage_b.get("counterfactual_immutable_feature_columns"),
+        "counterfactual_immutable_feature_columns",
+        [],
+    )
 
     golden_set_uri = _coerce_optional_text(stage_b.get("golden_set_uri"))
     system_prompt_uri = _coerce_optional_text(stage_b.get("system_prompt_uri"))
@@ -341,6 +369,8 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         positive_label=positive_label,
         feature_columns=feature_columns,
         sensitive_feature_columns=sensitive_feature_columns,
+        counterfactual_actionable_feature_columns=actionable_columns,
+        counterfactual_immutable_feature_columns=immutable_columns,
         golden_set_uri=golden_set_uri,
         system_prompt_uri=system_prompt_uri,
         rag_manifest_uri=rag_manifest_uri,

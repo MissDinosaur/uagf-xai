@@ -13,34 +13,106 @@ import pandas as pd
 from output_naming import build_output_path
 
 
-_POTENTIALLY_IMMUTABLE_FEATURES = {
-    "age",
-    "date_of_birth",
-    "disability",
-    "ethnicity",
-    "foreign_worker",
-    "gender",
-    "nationality",
-    "personal_status",
-    "race",
-    "religion",
-    "sex",
-}
-
-
 def _encode_for_dice(X: pd.DataFrame):
-    """Encode categoricals for DiCE while retaining their display labels."""
+    """Build a stable generation schema while retaining display labels."""
     categorical_dtypes = {}
+    categorical_ranges = {}
     encoded = X.copy()
     for column in encoded.columns:
         if isinstance(encoded[column].dtype, pd.CategoricalDtype):
             categorical_dtypes[column] = encoded[column].dtype
-            encoded[column] = encoded[column].cat.codes.astype("int64")
+            encoded[column] = encoded[column].cat.codes.astype(str).astype(object)
         elif encoded[column].dtype == object:
             categorical = encoded[column].astype("category")
             categorical_dtypes[column] = categorical.dtype
-            encoded[column] = categorical.cat.codes.astype("int64")
-    return encoded, categorical_dtypes
+            encoded[column] = categorical.cat.codes.astype(str).astype(object)
+        else:
+            encoded[column] = pd.to_numeric(encoded[column], errors="raise").astype(float)
+        if column in categorical_dtypes:
+            categorical_ranges[column] = [
+                str(code) for code in range(len(categorical_dtypes[column].categories))
+            ]
+    return encoded, categorical_dtypes, categorical_ranges
+
+
+def _resolve_feature_policy(
+    model_features,
+    sensitive_features,
+    actionable_features,
+    immutable_features,
+    target_column,
+):
+    """Validate the S5 policy and return the exact DiCE feature allowlist."""
+    model_features = list(model_features)
+    model_feature_set = set(model_features)
+    sensitive = list(dict.fromkeys(sensitive_features or []))
+    immutable = list(immutable_features or [])
+
+    for field_name, values in (
+        ("counterfactual_actionable_feature_columns", actionable_features),
+        ("counterfactual_immutable_feature_columns", immutable),
+    ):
+        if values is None:
+            continue
+        if len(values) != len(set(values)):
+            raise ValueError(f"{field_name} must not contain duplicate columns.")
+        if target_column and target_column in values:
+            raise ValueError(
+                f"{field_name} must not contain target_column {target_column!r}."
+            )
+        unknown = [feature for feature in values if feature not in model_feature_set]
+        if unknown:
+            raise ValueError(f"{field_name} contains unknown model features: {unknown}")
+
+    excluded_sensitive = [feature for feature in model_features if feature in sensitive]
+    excluded_immutable = [feature for feature in model_features if feature in immutable]
+    if actionable_features is not None:
+        sensitive_conflicts = [
+            feature for feature in actionable_features if feature in excluded_sensitive
+        ]
+        if sensitive_conflicts:
+            raise ValueError(
+                "counterfactual_actionable_feature_columns must not authorize "
+                f"S5 sensitive features: {sensitive_conflicts}"
+            )
+        immutable_conflicts = [
+            feature for feature in actionable_features if feature in excluded_immutable
+        ]
+        if immutable_conflicts:
+            raise ValueError(
+                "Counterfactual features cannot be both actionable and immutable: "
+                f"{immutable_conflicts}"
+            )
+        features_to_vary = list(actionable_features)
+        source = "s5_actionable_allowlist"
+        excluded_non_actionable = [
+            feature
+            for feature in model_features
+            if feature not in features_to_vary
+            and feature not in excluded_sensitive
+            and feature not in excluded_immutable
+        ]
+        status = "validated"
+    else:
+        blocked = set(excluded_sensitive) | set(excluded_immutable)
+        features_to_vary = [
+            feature for feature in model_features if feature not in blocked
+        ]
+        excluded_non_actionable = []
+        source = "s5_immutable_exclusions" if immutable else "model_features_default"
+        status = "validated" if immutable else "metadata_not_provided"
+
+    return {
+        "counterfactual_policy_source": source,
+        "counterfactual_policy_status": status,
+        "counterfactual_actionable_feature_allowlist": (
+            list(actionable_features) if actionable_features is not None else None
+        ),
+        "excluded_sensitive_features": excluded_sensitive,
+        "excluded_immutable_features": excluded_immutable,
+        "excluded_non_actionable_features": excluded_non_actionable,
+        "features_to_vary": features_to_vary,
+    }
 
 
 class _RecodingWrapper:
@@ -117,7 +189,7 @@ def _changed_features(
     original_model_ready: pd.Series,
     counterfactual_model_ready: pd.Series,
     categorical_dtypes,
-    protected_features: set[str],
+    prohibited_features: set[str],
 ) -> tuple[list[dict[str, Any]], bool]:
     changes = []
     decoding_reliable = True
@@ -137,7 +209,6 @@ def _changed_features(
         if feature_type == "numeric" and isinstance(original_ready, Number) and isinstance(counterfactual_ready, Number):
             delta = _json_value(float(counterfactual_ready) - float(original_ready))
 
-        normalized_name = str(feature).strip().lower()
         changes.append(
             {
                 "feature": str(feature),
@@ -147,10 +218,7 @@ def _changed_features(
                 "delta": delta,
                 "model_ready_original_value": _json_value(original_ready),
                 "model_ready_counterfactual_value": _json_value(counterfactual_ready),
-                "is_sensitive_or_immutable": (
-                    feature in protected_features
-                    or normalized_name in _POTENTIALLY_IMMUTABLE_FEATURES
-                ),
+                "is_sensitive_or_immutable": feature in prohibited_features,
             }
         )
     return changes, decoding_reliable
@@ -180,6 +248,9 @@ def run_dice(
     provider_name=None,
     output_namespace="audit",
     sensitive_features=None,
+    actionable_features=None,
+    immutable_features=None,
+    target_column=None,
 ):
     """Run DiCE and persist machine-readable counterfactual evidence."""
     try:
@@ -207,7 +278,38 @@ def run_dice(
         fallback=output_namespace,
     )
 
-    X_encoded, categorical_dtypes = _encode_for_dice(X_raw)
+    X_encoded, categorical_dtypes, categorical_ranges = _encode_for_dice(X_raw)
+    policy = _resolve_feature_policy(
+        X_encoded.columns,
+        sensitive_features,
+        actionable_features,
+        immutable_features,
+        target_column,
+    )
+    permitted_features = policy["features_to_vary"]
+    if not permitted_features:
+        reason = (
+            "DiCE was not executed because the validated counterfactual policy "
+            "authorizes no model features to vary."
+        )
+        artifact = {
+            "status": "skipped",
+            "reason": reason,
+            **policy,
+            "policy_violation_detected": False,
+            "sensitive_or_immutable_change_detected": False,
+            "limitations": [reason],
+        }
+        with open(output_path, "w", encoding="utf-8") as output_file:
+            json.dump(artifact, output_file, indent=2, ensure_ascii=False)
+        return {
+            "type": "explainability",
+            "method": "DiCE",
+            "evidence_type": "counterfactual_explanation",
+            "output": output_path,
+            **artifact,
+        }
+
     outcome_name = "__uagf_target__"
     dataframe = X_encoded.reset_index(drop=True).copy()
     labels = pd.Series(y).reset_index(drop=True)
@@ -225,6 +327,7 @@ def run_dice(
         dataframe=dataframe,
         continuous_features=continuous_columns,
         outcome_name=outcome_name,
+        permitted_range=categorical_ranges,
     )
 
     dice_model = (
@@ -239,25 +342,13 @@ def run_dice(
     )
 
     query_model_ready = X_encoded.iloc[0:1]
-    protected_features = {
-        feature for feature in (sensitive_features or []) if feature in X_raw.columns
-    }
+    prohibited_features = set(policy["excluded_sensitive_features"])
+    prohibited_features.update(policy["excluded_immutable_features"])
     generation_options = {
         "total_CFs": 2,
         "desired_class": "opposite",
     }
-    if protected_features:
-        permitted_features = [
-            feature for feature in X_encoded.columns if feature not in protected_features
-        ]
-        if not permitted_features:
-            raise ValueError(
-                "DiCE cannot generate a counterfactual because every model feature "
-                "is configured as sensitive or immutable."
-            )
-        generation_options["features_to_vary"] = permitted_features
-    else:
-        permitted_features = list(X_encoded.columns)
+    generation_options["features_to_vary"] = permitted_features
 
     dice_exp = explainer.generate_counterfactuals(
         query_model_ready,
@@ -274,6 +365,7 @@ def run_dice(
     structured_counterfactuals = []
     all_decoding_reliable = True
     sensitive_change_detected = False
+    policy_violation_detected = False
     for index, (_, counterfactual_ready) in enumerate(
         counterfactual_frame.iterrows(), 1
     ):
@@ -286,11 +378,14 @@ def run_dice(
             query_ready,
             counterfactual_ready,
             categorical_dtypes,
-            protected_features,
+            prohibited_features,
         )
         all_decoding_reliable = all_decoding_reliable and decoding_reliable
         sensitive_change_detected = sensitive_change_detected or any(
             change["is_sensitive_or_immutable"] for change in changes
+        )
+        policy_violation_detected = policy_violation_detected or any(
+            change["feature"] not in permitted_features for change in changes
         )
         display_values = {}
         for feature, value in counterfactual_ready.items():
@@ -327,6 +422,11 @@ def run_dice(
         limitations.append(
             "The generated counterfactual changes potentially immutable or sensitive "
             "features and should not be treated as an actionable recommendation."
+        )
+    if policy["counterfactual_policy_status"] == "metadata_not_provided":
+        limitations.append(
+            "S5 did not provide actionable or immutable feature metadata; generated "
+            "changes must not be described as actionable recommendations."
         )
 
     unique_changed_features = list(
@@ -368,7 +468,14 @@ def run_dice(
             "sensitive_or_immutable_change_detected": sensitive_change_detected,
         },
         "generation_method": "DiCE random",
-        "protected_features_requested": sorted(protected_features),
+        **policy,
+        "generation_dtype_schema": {
+            feature: str(dtype) for feature, dtype in X_encoded.dtypes.items()
+        },
+        "permitted_categorical_values": categorical_ranges,
+        "policy_violation_detected": policy_violation_detected,
+        "sensitive_or_immutable_change_detected": sensitive_change_detected,
+        "protected_features_requested": policy["excluded_sensitive_features"],
         "features_permitted_to_vary": permitted_features,
         "limitations": limitations,
     }

@@ -160,6 +160,13 @@ def test_structured_dice_output_is_normalized_as_explainability():
         "original_prediction_proba": [0.1, 0.9],
         "desired_class": "opposite",
         "counterfactuals_count": 1,
+        "counterfactual_policy_source": "s5_immutable_exclusions",
+        "counterfactual_policy_status": "validated",
+        "excluded_sensitive_features": ["personal_status"],
+        "excluded_immutable_features": ["age", "credit_history"],
+        "excluded_non_actionable_features": [],
+        "features_to_vary": ["income"],
+        "policy_violation_detected": False,
         "counterfactuals": [
             {
                 "counterfactual_id": 1,
@@ -187,6 +194,13 @@ def test_structured_dice_output_is_normalized_as_explainability():
     assert result["method"] == "DiCE"
     assert result["metrics"]["changed_features_count"] == 1
     assert result["metrics"]["changed_features"][0]["feature"] == "income"
+    assert result["metrics"]["counterfactual_policy_status"] == "validated"
+    assert result["metrics"]["excluded_immutable_features"] == [
+        "age",
+        "credit_history",
+    ]
+    assert result["metrics"]["features_to_vary"] == ["income"]
+    assert result["metrics"]["policy_violation_detected"] is False
     assert result["raw_output"] == raw
 
 

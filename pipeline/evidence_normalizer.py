@@ -262,17 +262,32 @@ def _normalize_drift(raw: dict) -> dict:
     limitations = []
     if raw.get("note"):
         limitations.append(str(raw["note"]))
+    canonical_source = raw.get("canonical_source") or "evidently"
     return completed_evidence(
         **_base_payload("drift", raw),
-        summary="Evidently produced dataset-level drift monitoring evidence.",
+        summary=f"{canonical_source} produced canonical dataset-level drift evidence.",
         key_findings=[
             f"Dataset-level drift share is {raw.get('drift_share')}.",
             f"{raw.get('features_analyzed')} features were analyzed.",
         ],
         metrics={
+            "canonical_source": raw.get("canonical_source"),
+            "dataset_drift_detected": raw.get("dataset_drift_detected"),
             "drift_share": raw.get("drift_share"),
+            "drifted_feature_count": raw.get("drifted_feature_count"),
             "features_analyzed": raw.get("features_analyzed"),
             "drifted_features": deepcopy(raw.get("drifted_features") or []),
+            "canonical_feature_tests": deepcopy(
+                raw.get("canonical_feature_tests") or []
+            ),
+            "supplementary_feature_tests": deepcopy(
+                raw.get("supplementary_feature_tests") or {}
+            ),
+            "evidently_result_available": raw.get("evidently_result_available"),
+            "evidently_engine_threshold": raw.get("evidently_engine_threshold"),
+            "uagf_dataset_drift_share_threshold": raw.get(
+                "uagf_dataset_drift_share_threshold"
+            ),
         },
         limitations=limitations,
     )

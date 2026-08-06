@@ -361,6 +361,8 @@ def test_llm_metadata_only_report_uses_explicit_resource_badge(
         task_type="llm_generation",
         provider_name="LLM Provider",
         golden_set_uri="file://golden.json",
+        positive_label=1,
+        feature_columns=["prompt"],
     )
     results = {"_cbep_trace": _trace(LLM_METHOD_ORDER)}
     for index, token in enumerate(LLM_METHOD_ORDER, 1):
@@ -392,6 +394,37 @@ def test_llm_metadata_only_report_uses_explicit_resource_badge(
     assert "Golden-set records" in html
     assert ">1<" in html
     assert "agentic LLM system in the justice domain" in html
+    audit_scope = html.split('<section id="audit-scope">', 1)[1].split(
+        "</section>", 1
+    )[0]
+    assert "Legacy target-drop fallback" not in html
+    assert "<th>Model feature columns</th><td>Not applicable</td>" in audit_scope
+    assert "<th>Target column</th><td>Not applicable</td>" in audit_scope
+    assert "<th>Positive label</th><td>Not applicable</td>" in audit_scope
+    assert html.count("status-skipped") >= 4
+
+
+def test_legacy_traditional_text_report_keeps_target_drop_fallback(
+    tmp_path, monkeypatch, governance_context, unified_result_factory
+):
+    output = _output_to(tmp_path, monkeypatch)
+    audit_context = AuditContext(
+        system_type="traditional_ml",
+        modality="text",
+        task_type="binary_classification",
+        feature_columns=None,
+    )
+
+    report_generator.generate_report(
+        {"explainability": unified_result_factory(), "_cbep_trace": _trace(["shap"])},
+        "high",
+        audit_context=audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "<th>Model feature columns</th><td>Legacy target-drop fallback</td>" in html
 
 
 def test_generate_report_skips_pdf_export_when_disabled(

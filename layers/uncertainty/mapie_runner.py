@@ -8,6 +8,81 @@ _CLASSIFICATION_TASKS = {
     "multiclass_classification",
 }
 _REGRESSION_TASKS = {"regression", "forecasting"}
+_MAX_TEXT_MAPIE_DENSE_BYTES = 512 * 1024 * 1024
+
+
+def _named_estimator_view(estimator, X, task_type):
+    """Delegate MAPIE ndarray calls to the original estimator with named columns."""
+    if not hasattr(X, "columns") or not hasattr(estimator, "feature_names_in_"):
+        return estimator
+
+    import pandas as pd
+    from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+    from sklearn.utils.metaestimators import available_if
+
+    feature_names = list(estimator.feature_names_in_)
+
+    class NamedClassifierView(ClassifierMixin, BaseEstimator):
+        def __init__(self, fitted_estimator, columns):
+            self.fitted_estimator = fitted_estimator
+            self.columns = columns
+
+        @property
+        def classes_(self):
+            return self.fitted_estimator.classes_
+
+        @property
+        def n_features_in_(self):
+            return len(self.columns)
+
+        def _frame(self, values):
+            if isinstance(values, pd.DataFrame):
+                return values.loc[:, self.columns]
+            return pd.DataFrame(values, columns=self.columns)
+
+        def predict(self, values):
+            return self.fitted_estimator.predict(self._frame(values))
+
+        @available_if(lambda self: hasattr(self.fitted_estimator, "predict_proba"))
+        def predict_proba(self, values):
+            return self.fitted_estimator.predict_proba(self._frame(values))
+
+        @available_if(lambda self: hasattr(self.fitted_estimator, "decision_function"))
+        def decision_function(self, values):
+            return self.fitted_estimator.decision_function(self._frame(values))
+
+        def fit(self, X, y=None):
+            raise RuntimeError("The MAPIE feature-name view is read-only.")
+
+        def __sklearn_is_fitted__(self):
+            return True
+
+    class NamedRegressorView(RegressorMixin, BaseEstimator):
+        def __init__(self, fitted_estimator, columns):
+            self.fitted_estimator = fitted_estimator
+            self.columns = columns
+
+        @property
+        def n_features_in_(self):
+            return len(self.columns)
+
+        def _frame(self, values):
+            if isinstance(values, pd.DataFrame):
+                return values.loc[:, self.columns]
+            return pd.DataFrame(values, columns=self.columns)
+
+        def predict(self, values):
+            return self.fitted_estimator.predict(self._frame(values))
+
+        def fit(self, X, y=None):
+            raise RuntimeError("The MAPIE feature-name view is read-only.")
+
+        def __sklearn_is_fitted__(self):
+            return True
+
+    if task_type in _CLASSIFICATION_TASKS:
+        return NamedClassifierView(estimator, feature_names)
+    return NamedRegressorView(estimator, feature_names)
 
 
 def _model_view(model, X):
@@ -167,47 +242,66 @@ def run_uncertainty(model, X, y, task_type=None, modality=None):
         raise ValueError("MAPIE uncertainty analysis requires evaluation labels.")
 
     normalized_task = str(task_type or "").strip().lower()
+    effective_task = normalized_task or "binary_classification"
     estimator, X_model = _model_view(model, X)
+    if hasattr(X_model, "columns") and hasattr(estimator, "feature_names_in_"):
+        feature_names = list(estimator.feature_names_in_)
+        missing = [name for name in feature_names if name not in X_model.columns]
+        if missing:
+            raise ValueError(f"MAPIE input is missing fitted model features: {missing}")
+        X_model = X_model.loc[:, feature_names]
+    mapie_estimator = _named_estimator_view(estimator, X_model, effective_task)
+    is_text = str(modality or "").strip().lower() == "text"
+    input_representation = "tfidf_dense" if is_text else "model_ready_numeric"
     try:
         from scipy.sparse import issparse
 
         if issparse(X_model):
-            X_model = X_model.toarray()
+            if is_text:
+                # MAPIE 1.3.0 calls len(X) and rejects SciPy sparse text matrices.
+                dense_bytes = int(
+                    X_model.shape[0] * X_model.shape[1] * X_model.dtype.itemsize
+                )
+                if dense_bytes > _MAX_TEXT_MAPIE_DENSE_BYTES:
+                    dense_mib = dense_bytes / (1024 * 1024)
+                    limit_mib = _MAX_TEXT_MAPIE_DENSE_BYTES / (1024 * 1024)
+                    raise MemoryError(
+                        f"MAPIE requires dense text input in the installed API, but "
+                        f"the projected TF-IDF matrix is {dense_mib:.1f} MiB and "
+                        f"exceeds the {limit_mib:.0f} MiB safety limit."
+                    )
+                X_model = X_model.toarray()
+                input_representation = "tfidf_dense_for_mapie"
+            else:
+                input_representation = "model_ready_sparse"
     except ImportError:
         pass
-    input_representation = (
-        "tfidf_sparse"
-        if str(modality or "").strip().lower() == "text"
-        else "model_ready_numeric"
-    )
     confidence_level = 0.9
 
     try:
-        if normalized_task in _REGRESSION_TASKS:
+        if effective_task in _REGRESSION_TASKS:
             metrics = _regression_uncertainty(
-                estimator,
+                mapie_estimator,
                 X_model,
                 y,
                 confidence_level,
-                normalized_task,
+                effective_task,
             )
-        elif normalized_task in _CLASSIFICATION_TASKS or not normalized_task:
+        elif effective_task in _CLASSIFICATION_TASKS:
             metrics = _classification_uncertainty(
-                estimator,
+                mapie_estimator,
                 X_model,
                 y,
                 confidence_level,
-                normalized_task or "binary_classification",
+                effective_task,
             )
         else:
-            raise ValueError(
-                f"MAPIE does not support task type {normalized_task!r}."
-            )
+            raise ValueError(f"MAPIE does not support task type {effective_task!r}.")
     except ImportError as exc:
         raise ImportError("MAPIE is required to run uncertainty analysis.") from exc
     except Exception as exc:
         raise RuntimeError(
-            f"MAPIE execution failed for task_type={normalized_task!r}: {exc}"
+            f"MAPIE execution failed for task_type={effective_task!r}: {exc}"
         ) from exc
 
     coverage = metrics["coverage"]
@@ -215,13 +309,13 @@ def run_uncertainty(model, X, y, task_type=None, modality=None):
         "type": "uncertainty",
         "method": "MAPIE (Conformal Prediction)",
         "status": "completed",
-        "task_type": normalized_task,
+        "task_type": effective_task,
         "input_representation": input_representation,
         "estimator_class": type(getattr(model, "estimator", estimator)).__name__,
         "estimator_mode": "prefit",
         "calibration_policy": (
             "deterministic_stratified_half_split"
-            if normalized_task in _CLASSIFICATION_TASKS
+            if effective_task in _CLASSIFICATION_TASKS
             else "first_half_of_evaluation_data"
         ),
         "confidence_level": confidence_level,
@@ -229,7 +323,7 @@ def run_uncertainty(model, X, y, task_type=None, modality=None):
         "coverage": round(coverage, 4),
         "mean_interval_width": round(metrics["mean_interval_width"], 4),
         "mean_prediction_set_size": round(metrics["mean_interval_width"], 4)
-        if normalized_task in _CLASSIFICATION_TASKS
+        if effective_task in _CLASSIFICATION_TASKS
         else None,
         "coverage_gap": round(abs(confidence_level - coverage), 4),
     }

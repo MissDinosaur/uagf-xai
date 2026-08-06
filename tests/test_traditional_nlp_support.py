@@ -286,7 +286,7 @@ def test_text_mapie_uses_transform_without_refitting(talentsift_model, monkeypat
     )
 
     assert result["status"] == "completed"
-    assert result["input_representation"] == "tfidf_sparse"
+    assert result["input_representation"] == "tfidf_dense_for_mapie"
     assert result["estimator_class"] == "LogisticRegression"
     assert 0.0 <= result["coverage"] <= 1.0
 

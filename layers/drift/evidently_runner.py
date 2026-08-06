@@ -119,8 +119,78 @@ def _run_evidently(reference: pd.DataFrame, current: pd.DataFrame) -> tuple[Any,
         return {}, f"Evidently execution was unavailable: {type(exc).__name__}: {exc}"
 
 
+def _extract_evidently_drift(snapshot: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Extract canonical per-column drift from an Evidently v2 snapshot."""
+    if not isinstance(snapshot, dict):
+        return None, "Evidently did not return a dictionary snapshot."
+    metric_results = snapshot.get("metric_results")
+    if not isinstance(metric_results, dict):
+        return None, "Evidently did not expose metric_results."
+
+    count_metric = None
+    feature_tests = []
+    for metric in metric_results.values():
+        if not isinstance(metric, dict):
+            continue
+        location = metric.get("metric_value_location") or {}
+        metric_definition = location.get("metric") or {}
+        params = metric_definition.get("params") or {}
+        metric_type = str(params.get("type") or "")
+        if metric_type.endswith("DriftedColumnsCount"):
+            count_metric = metric
+            continue
+        if not metric_type.endswith("ValueDrift"):
+            continue
+
+        feature = params.get("column")
+        threshold = params.get("threshold")
+        value = metric.get("value")
+        method = str(params.get("method") or "")
+        if feature in (None, "") or threshold is None or value is None:
+            continue
+        value = float(value)
+        threshold = float(threshold)
+        lower_is_drift = "p_value" in method.lower() or "p-value" in method.lower()
+        feature_tests.append({
+            "feature": str(feature),
+            "method": method,
+            "statistic": value,
+            "threshold": threshold,
+            "threshold_direction": "below" if lower_is_drift else "at_or_above",
+            "drift_detected": bool(value < threshold if lower_is_drift else value >= threshold),
+            "source": "evidently",
+        })
+
+    if not count_metric or not feature_tests:
+        return None, "Evidently per-column drift metrics could not be extracted."
+    count_value = (count_metric.get("count") or {}).get("value")
+    share_value = (count_metric.get("share") or {}).get("value")
+    if count_value is None or share_value is None:
+        return None, "Evidently drift count or share was missing."
+
+    drifted_count = int(float(count_value))
+    drifted_features = [
+        item["feature"] for item in feature_tests if item["drift_detected"]
+    ]
+    if len(drifted_features) != drifted_count:
+        return None, (
+            "Evidently drift count did not match its extractable per-column flags."
+        )
+    count_location = count_metric.get("metric_value_location") or {}
+    count_definition = count_location.get("metric") or {}
+    count_params = count_definition.get("params") or {}
+    return {
+        "drift_share": float(share_value),
+        "drifted_feature_count": drifted_count,
+        "features_analyzed": len(feature_tests),
+        "drifted_features": drifted_features,
+        "canonical_feature_tests": feature_tests,
+        "evidently_engine_threshold": count_params.get("drift_share"),
+    }, None
+
+
 def _save_feature_tests(
-    feature_tests: list[dict[str, Any]],
+    feature_tests: Any,
     provider_name: str | None,
     output_namespace: str,
 ) -> str:
@@ -266,15 +336,39 @@ def _run_text_drift(
         reference_derived,
         current_derived,
     )
-    derived_drift_share = sum(
-        item["drift_detected"] for item in derived_tests
-    ) / len(derived_tests)
-    dataset_drift_detected = bool(
-        derived_drift_share >= dataset_drift_threshold
-        or centroid_distance >= 0.1
-        or token_js_distance >= 0.1
-        or oov_rate >= 0.1
+    evidently_drift, extraction_limitation = _extract_evidently_drift(
+        evidently_snapshot
     )
+    supplementary_tests = {
+        "source": "uagf_xai_text_drift_tests",
+        "numeric_method": "ks_test",
+        "results": derived_tests,
+        "tfidf_centroid_cosine_distance": round(centroid_distance, 6),
+        "top_token_js_distance": round(token_js_distance, 6),
+        "oov_rate": round(oov_rate, 6),
+        "top_token_overlap": round(top_token_overlap, 6),
+    }
+    if evidently_drift:
+        canonical_source = "evidently"
+        canonical_tests = sorted(
+            evidently_drift["canonical_feature_tests"],
+            key=lambda item: bool(item["drift_detected"]),
+            reverse=True,
+        )
+        drift_share = evidently_drift["drift_share"]
+        drifted_features = evidently_drift["drifted_features"]
+        features_analyzed = evidently_drift["features_analyzed"]
+        evidently_engine_threshold = evidently_drift["evidently_engine_threshold"]
+    else:
+        canonical_source = "fallback_feature_tests"
+        canonical_tests = derived_tests
+        drifted_features = [
+            item["feature"] for item in derived_tests if item["drift_detected"]
+        ]
+        features_analyzed = len(derived_tests)
+        drift_share = len(drifted_features) / features_analyzed
+        evidently_engine_threshold = None
+    dataset_drift_detected = bool(drift_share >= dataset_drift_threshold)
     payload = {
         "type": "drift",
         "method": "Evidently + Text Drift Tests",
@@ -282,16 +376,21 @@ def _run_text_drift(
         "modality": "text",
         "feature_columns": [text_column],
         "derived_feature_tests": derived_tests,
+        "canonical_source": canonical_source,
+        "canonical_feature_tests": canonical_tests,
+        "supplementary_feature_tests": supplementary_tests,
         "tfidf_centroid_cosine_distance": round(centroid_distance, 6),
         "top_token_js_distance": round(token_js_distance, 6),
         "oov_rate": round(oov_rate, 6),
         "top_token_overlap": round(top_token_overlap, 6),
         "dataset_drift_detected": dataset_drift_detected,
-        "drift_share": round(derived_drift_share, 4),
-        "features_analyzed": len(derived_tests),
-        "drifted_features": [
-            item["feature"] for item in derived_tests if item["drift_detected"]
-        ],
+        "drift_share": round(drift_share, 6),
+        "drifted_feature_count": len(drifted_features),
+        "features_analyzed": features_analyzed,
+        "drifted_features": drifted_features,
+        "evidently_result_available": bool(evidently_snapshot),
+        "evidently_engine_threshold": evidently_engine_threshold,
+        "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
         "evidently_snapshot": evidently_snapshot,
         "note": evidently_limitation,
     }
@@ -304,9 +403,16 @@ def _run_text_drift(
     limitations = [
         "Statistical text and token-distribution drift does not establish semantic drift.",
         "Text drift does not by itself prove model performance degradation.",
+        "Supplementary token and TF-IDF statistics do not override canonical per-column drift.",
     ]
     if evidently_limitation:
         limitations.append(evidently_limitation)
+    if canonical_source == "fallback_feature_tests":
+        reason = extraction_limitation or "Evidently was unavailable."
+        limitations.append(
+            f"Evidently could not provide canonical per-column drift: {reason} "
+            "UAGF-XAI fallback feature tests are canonical for this result."
+        )
     return completed_evidence(
         evidence_id=EVIDENCE_ID,
         layer="drift",
@@ -317,6 +423,8 @@ def _run_text_drift(
             f"distributions; dataset-level drift was {decision}."
         ),
         key_findings=[
+            f"{len(drifted_features)} of {features_analyzed} derived features drifted.",
+            f"Canonical dataset-level drift share is {drift_share:.4f}.",
             f"TF-IDF centroid cosine distance is {centroid_distance:.4f}.",
             f"Token-distribution Jensen-Shannon distance is {token_js_distance:.4f}.",
             f"Current out-of-vocabulary token rate is {oov_rate:.4f}.",
@@ -412,7 +520,9 @@ def run_drift(
         except (TypeError, ValueError) as exc:
             skipped_columns.append({"feature": str(column), "reason": str(exc)})
 
-    if not feature_tests:
+    evidently_result, evidently_limitation = _run_evidently(reference_features, current_features)
+    evidently_drift, extraction_limitation = _extract_evidently_drift(evidently_result)
+    if not feature_tests and not evidently_drift:
         reason = "No common supported feature columns could be evaluated for drift."
         return skipped_evidence(
             evidence_id=EVIDENCE_ID,
@@ -428,23 +538,44 @@ def run_drift(
                 "common_columns": [str(column) for column in common_columns],
                 "excluded_columns": [str(column) for column in excluded_columns],
                 "skipped_columns": skipped_columns,
+                "evidently_result": evidently_result,
+                "evidently_limitation": evidently_limitation or extraction_limitation,
             },
         )
 
-    evidently_result, evidently_limitation = _run_evidently(
-        reference_features,
-        current_features,
-    )
     ranked_tests = sorted(
         feature_tests,
         key=lambda item: (bool(item["drift_detected"]), float(item["statistic"])),
         reverse=True,
     )
-    drifted_features = [
-        item["feature"] for item in ranked_tests if item["drift_detected"]
-    ]
-    features_analyzed = len(feature_tests)
-    drift_share = round(len(drifted_features) / features_analyzed, 4)
+    supplementary_feature_tests = {
+        "source": "uagf_xai_fallback_tests",
+        "numeric_method": "ks_test",
+        "categorical_method": "jensen_shannon",
+        "numeric_p_value_threshold": numeric_threshold,
+        "categorical_distance_threshold": categorical_threshold,
+        "results": ranked_tests,
+    }
+    if evidently_drift:
+        canonical_source = "evidently"
+        canonical_feature_tests = sorted(
+            evidently_drift["canonical_feature_tests"],
+            key=lambda item: bool(item["drift_detected"]),
+            reverse=True,
+        )
+        drifted_features = evidently_drift["drifted_features"]
+        features_analyzed = evidently_drift["features_analyzed"]
+        drift_share = evidently_drift["drift_share"]
+        evidently_engine_threshold = evidently_drift["evidently_engine_threshold"]
+    else:
+        canonical_source = "fallback_feature_tests"
+        canonical_feature_tests = ranked_tests
+        drifted_features = [
+            item["feature"] for item in ranked_tests if item["drift_detected"]
+        ]
+        features_analyzed = len(feature_tests)
+        drift_share = len(drifted_features) / features_analyzed
+        evidently_engine_threshold = None
     dataset_drift_detected = drift_share >= dataset_drift_threshold
 
     limitations = [
@@ -452,10 +583,16 @@ def run_drift(
         "The current implementation measures data and feature distribution drift, not label-based concept drift.",
         "Drift results depend on sample size and chosen statistical thresholds.",
         "Categorical drift uses distribution distance and should be interpreted with domain knowledge.",
-        "The current Evidently API version may not expose per-column details, so UAGF-XAI adds fallback feature-level tests.",
+        "Supplementary UAGF-XAI KS and Jensen-Shannon tests use different statistical thresholds and do not override canonical Evidently results.",
     ]
     if evidently_limitation:
         limitations.append(evidently_limitation)
+    if canonical_source == "fallback_feature_tests":
+        reason = extraction_limitation or "Evidently was unavailable."
+        limitations.append(
+            f"Evidently could not provide canonical per-column drift: {reason} "
+            "UAGF-XAI fallback feature tests are canonical for this result."
+        )
     if skipped_columns:
         limitations.append(
             f"{len(skipped_columns)} common column(s) could not be evaluated; details are preserved in raw_output."
@@ -473,37 +610,43 @@ def run_drift(
 
     method_details = {
         "primary_engine": "Evidently",
-        "fallback_feature_tests": {
-            "numeric": "scipy.stats.ks_2samp",
-            "categorical": "scipy.spatial.distance.jensenshannon",
-        },
-        "numeric_p_value_threshold": numeric_threshold,
-        "categorical_distance_threshold": categorical_threshold,
-        "dataset_drift_share_threshold": dataset_drift_threshold,
+        "canonical_source": canonical_source,
+        "evidently_engine_threshold": evidently_engine_threshold,
+        "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
         "evidently_result_available": bool(evidently_result),
+        "evidently_per_column_extractable": bool(evidently_drift),
     }
-    artifact_path = _save_feature_tests(
-        ranked_tests,
-        provider_name,
-        output_namespace,
-    )
     metrics = {
+        "canonical_source": canonical_source,
         "dataset_drift_detected": bool(dataset_drift_detected),
-        "drift_share": drift_share,
+        "drift_share": round(drift_share, 6),
+        "drifted_feature_count": len(drifted_features),
         "features_analyzed": features_analyzed,
         "number_of_columns": features_analyzed,
         "reference_rows": len(reference_df),
         "current_rows": len(current_df),
         "drifted_features": drifted_features,
-        "top_drifted_columns": ranked_tests[:10],
+        "top_drifted_columns": canonical_feature_tests[:10],
+        "canonical_feature_tests": canonical_feature_tests,
+        "supplementary_feature_tests": supplementary_feature_tests,
+        "evidently_result_available": bool(evidently_result),
+        "evidently_engine_threshold": evidently_engine_threshold,
+        "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
         "method_details": method_details,
     }
+    artifact_payload = {
+        **metrics,
+        "evidently_result": evidently_result,
+        "supplementary_feature_tests": supplementary_feature_tests,
+    }
+    artifact_path = _save_feature_tests(artifact_payload, provider_name, output_namespace)
     decision_text = "detected" if dataset_drift_detected else "not detected"
     summary = (
         f"The drift analysis compared {len(reference_df)} reference rows against "
         f"{len(current_df)} current rows across {features_analyzed} common feature columns. "
         f"{len(drifted_features)} feature(s) were flagged as drifted, producing a drift "
-        f"share of {drift_share:.4f}. Under the configured dataset-level threshold of "
+        f"share of {drift_share:.4f}. Using {canonical_source} as the canonical source "
+        f"and the configured UAGF-XAI dataset-level threshold of "
         f"{dataset_drift_threshold:.2f}, dataset-level drift was {decision_text}."
     )
     key_findings = [
@@ -528,12 +671,22 @@ def run_drift(
         artifacts=[artifact_path],
         limitations=limitations,
         raw_output={
+            "canonical_source": canonical_source,
+            "dataset_drift_detected": bool(dataset_drift_detected),
+            "drift_share": round(drift_share, 6),
+            "drifted_feature_count": len(drifted_features),
+            "features_analyzed": features_analyzed,
+            "drifted_features": drifted_features,
+            "canonical_feature_tests": canonical_feature_tests,
+            "supplementary_feature_tests": supplementary_feature_tests,
+            "evidently_result_available": bool(evidently_result),
+            "evidently_engine_threshold": evidently_engine_threshold,
+            "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
             "evidently_result": evidently_result,
-            "feature_tests": ranked_tests,
             "thresholds": {
                 "numeric_p_value": numeric_threshold,
                 "categorical_distance": categorical_threshold,
-                "dataset_drift_share": dataset_drift_threshold,
+                "uagf_dataset_drift_share": dataset_drift_threshold,
             },
             "common_columns": [str(column) for column in feature_columns],
             "excluded_columns": [str(column) for column in excluded_columns],

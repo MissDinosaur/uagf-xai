@@ -353,18 +353,24 @@ def build_audit_scope(audit_context, governance_context, resource_context=None):
         {"label": "System type / modality", "value": f"{_display(_value(audit_context, 'system_type'))} / {_display(_value(audit_context, 'modality'))}"},
         {"label": "CSP satisfied", "value": _display(_value(audit_context, "csp_satisfied"))},
     ]
+    task_type = str(_value(audit_context, "task_type", "") or "").lower()
+    is_llm = _is_llm(audit_context) or task_type == "llm_generation"
+    contract_fallback = "Not applicable" if is_llm else "Not provided"
     contract_rows = [
-        {"label": "Target column", "value": _display(_value(audit_context, "target_column"))},
-        {"label": "Positive label", "value": _display(_value(audit_context, "positive_label"))},
+        {"label": "Target column", "value": _display(_value(audit_context, "target_column"), contract_fallback)},
+        {
+            "label": "Positive label",
+            "value": "Not applicable" if is_llm else _display(_value(audit_context, "positive_label")),
+        },
         {"label": "Sensitive features", "value": _display(_value(audit_context, "sensitive_feature_columns", []), "None configured")},
     ]
     modality = str(_value(audit_context, "modality", "") or "").lower()
-    if modality == "text":
+    if modality == "text" or is_llm:
         contract_rows.insert(
             2,
             {
                 "label": "Model feature columns",
-                "value": _display(
+                "value": "Not applicable" if is_llm else _display(
                     _value(audit_context, "feature_columns"),
                     "Legacy target-drop fallback",
                 ),

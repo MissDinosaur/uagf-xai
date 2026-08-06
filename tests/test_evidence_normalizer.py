@@ -98,6 +98,26 @@ def test_existing_unified_evidence_is_preserved():
     assert result["explainability"] == unified
 
 
+def test_legacy_drift_normalization_preserves_canonical_detection_fields():
+    raw = {
+        "method": "Evidently",
+        "canonical_source": "evidently",
+        "dataset_drift_detected": True,
+        "drift_share": 0.4,
+        "drifted_feature_count": 2,
+        "features_analyzed": 5,
+        "drifted_features": ["a", "b"],
+        "uagf_dataset_drift_share_threshold": 0.2,
+    }
+
+    result = normalize_evidence_results({"drift": raw})["drift"]
+
+    assert result["metrics"]["canonical_source"] == "evidently"
+    assert result["metrics"]["dataset_drift_detected"] is True
+    assert result["metrics"]["drifted_feature_count"] == 2
+    assert result["metrics"]["uagf_dataset_drift_share_threshold"] == 0.2
+
+
 def test_incompatible_methods_receive_not_applicable_results():
     assessment = {
         "task_type": "forecasting",

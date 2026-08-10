@@ -135,7 +135,9 @@ def test_counterfactual_feature_policy_is_explicit_and_validated():
     assert policy["features_to_vary"] == ["income"]
     assert policy["excluded_sensitive_features"] == ["personal_status"]
     assert policy["excluded_immutable_features"] == ["age", "credit_history"]
-    assert policy["counterfactual_policy_source"] == "s5_actionable_allowlist"
+    assert policy["actionable_feature_columns"] == ["income"]
+    assert policy["immutable_feature_columns"] == ["age", "credit_history"]
+    assert policy["counterfactual_policy_source"] == "audit_context_actionable_allowlist"
     assert policy["counterfactual_policy_status"] == "validated"
 
 
@@ -145,7 +147,8 @@ def test_counterfactual_feature_policy_is_explicit_and_validated():
         (["unknown"], [], "unknown model features"),
         (["income", "income"], [], "duplicate columns"),
         (["credit_risk"], [], "target_column"),
-        (["personal_status"], [], "must not authorize S5 sensitive features"),
+        (["personal_status"], [], "must not authorize sensitive features"),
+        (["income"], ["income"], "both actionable and immutable"),
     ],
 )
 def test_counterfactual_feature_policy_rejects_invalid_contracts(
@@ -174,7 +177,7 @@ def test_no_authorized_features_returns_structured_skip(tmp_path, monkeypatch):
         _ThresholdModel(),
         pd.DataFrame({"income": [80_000, 30_000]}),
         pd.Series([1, 0]),
-        actionable_features=[],
+        actionable_feature_columns=[],
     )
 
     assert result["status"] == "skipped"
@@ -233,8 +236,8 @@ def test_finclear_dice_uses_saved_model_and_case_policy(tmp_path, monkeypatch):
             views.X_model,
             views.y,
             sensitive_features=views.sensitive_feature_columns,
-            actionable_features=context.counterfactual_actionable_feature_columns,
-            immutable_features=context.counterfactual_immutable_feature_columns,
+            actionable_feature_columns=context.actionable_feature_columns,
+            immutable_feature_columns=context.immutable_feature_columns,
             target_column=context.target_column,
         )
     after_hash = joblib.hash(fitted_objects)
@@ -278,3 +281,19 @@ def test_finclear_dice_uses_saved_model_and_case_policy(tmp_path, monkeypatch):
     assert predict_spy.called
     assert predict_proba_spy.called
     assert before_hash == after_hash
+
+
+def test_missing_policy_metadata_uses_name_agnostic_default_policy():
+    model_features = ["customer_id", "protected_guess", "ordinary_feature"]
+
+    policy = dice_runner._resolve_feature_policy(
+        model_features,
+        [],
+        None,
+        [],
+        "target",
+    )
+
+    assert policy["features_to_vary"] == model_features
+    assert policy["counterfactual_policy_source"] == "model_features_default"
+    assert policy["counterfactual_policy_status"] == "metadata_not_provided"

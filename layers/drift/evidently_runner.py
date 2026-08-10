@@ -252,6 +252,8 @@ def _run_text_drift(
     *,
     model,
     feature_columns,
+    feature_scope_source,
+    target_column,
     provider_name,
     output_namespace,
     numeric_threshold,
@@ -273,6 +275,21 @@ def _run_text_drift(
         )
     if not hasattr(model, "vectorizer"):
         raise TypeError("Text drift requires the fitted sklearn text model adapter.")
+
+    common_columns = sorted(set(reference_df.columns) & set(current_df.columns))
+    contextual_columns = [
+        column
+        for column in common_columns
+        if column != text_column and not _is_obvious_label(column, target_column)
+    ]
+    excluded_columns = sorted(
+        contextual_columns
+        + [
+            column
+            for column in common_columns
+            if _is_obvious_label(column, target_column)
+        ]
+    )
 
     vectorizer = model.vectorizer
     analyzer = vectorizer.build_analyzer()
@@ -374,6 +391,12 @@ def _run_text_drift(
         "method": "Evidently + Text Drift Tests",
         "status": "completed",
         "modality": "text",
+        "feature_scope_source": (
+            feature_scope_source or "audit_context_feature_columns"
+        ),
+        "model_feature_columns": [text_column],
+        "contextual_columns": contextual_columns,
+        "excluded_columns": excluded_columns,
         "feature_columns": [text_column],
         "derived_feature_tests": derived_tests,
         "canonical_source": canonical_source,
@@ -393,6 +416,26 @@ def _run_text_drift(
         "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
         "evidently_snapshot": evidently_snapshot,
         "note": evidently_limitation,
+    }
+    payload["model_input_drift"] = {
+        "status": "completed",
+        "feature_scope_source": payload["feature_scope_source"],
+        "features": [text_column],
+        "features_analyzed": features_analyzed,
+        "drifted_feature_count": len(drifted_features),
+        "drift_share": round(drift_share, 6),
+        "dataset_drift_detected": dataset_drift_detected,
+    }
+    payload["contextual_dataset_drift"] = {
+        "status": "supplementary_not_analyzed" if contextual_columns else "not_applicable",
+        "columns": contextual_columns,
+        "features_analyzed": 0,
+        "reason": (
+            "Contextual columns are disclosed separately and do not affect the "
+            "canonical text drift conclusion."
+            if contextual_columns
+            else "No contextual columns were present in both datasets."
+        ),
     }
     artifact_path = _save_text_drift(
         payload,
@@ -447,6 +490,7 @@ def run_drift(
     model=None,
     modality=None,
     feature_columns=None,
+    feature_scope_source=None,
     sensitive_feature_columns=None,
     target_column: str | None = None,
     provider_name: str | None = None,
@@ -479,6 +523,8 @@ def run_drift(
             current_df,
             model=model,
             feature_columns=feature_columns,
+            feature_scope_source=feature_scope_source,
+            target_column=target_column,
             provider_name=provider_name,
             output_namespace=output_namespace,
             numeric_threshold=numeric_threshold,
@@ -488,18 +534,82 @@ def run_drift(
     reference_columns = set(reference_df.columns)
     current_columns = set(current_df.columns)
     all_columns = reference_columns | current_columns
-    excluded_columns = sorted(
+    label_columns = sorted(
         [column for column in all_columns if _is_obvious_label(column, target_column)],
         key=str,
     )
     common_columns = sorted(reference_columns & current_columns, key=str)
-    feature_columns = [column for column in common_columns if column not in excluded_columns]
-    reference_features = reference_df.loc[:, feature_columns]
-    current_features = current_df.loc[:, feature_columns]
+    common_non_label = [
+        column for column in common_columns if column not in label_columns
+    ]
+    requested_features = list(feature_columns or [])
+    if requested_features:
+        resolved_scope_source = (
+            feature_scope_source or "audit_context_feature_columns"
+        )
+        duplicate_features = sorted(
+            {
+                column
+                for column in requested_features
+                if requested_features.count(column) > 1
+            },
+            key=str,
+        )
+        target_features = [
+            column for column in requested_features if column in label_columns
+        ]
+        missing_reference = [
+            column for column in requested_features if column not in reference_columns
+        ]
+        missing_current = [
+            column for column in requested_features if column not in current_columns
+        ]
+        if duplicate_features or target_features or missing_reference or missing_current:
+            reason = (
+                "Canonical model-input drift was not calculated because the "
+                "authoritative feature schema did not match both datasets."
+            )
+            mismatch = {
+                "feature_scope_source": resolved_scope_source,
+                "requested_model_feature_columns": requested_features,
+                "duplicate_model_feature_columns": duplicate_features,
+                "target_columns_in_model_scope": target_features,
+                "missing_reference_model_features": missing_reference,
+                "missing_current_model_features": missing_current,
+            }
+            return skipped_evidence(
+                evidence_id=EVIDENCE_ID,
+                layer="drift",
+                method=METHOD_NAME,
+                article_mapping=ARTICLE_MAPPING,
+                summary=reason,
+                key_findings=[],
+                metrics={
+                    **mismatch,
+                    "model_input_drift": {
+                        "status": "schema_mismatch",
+                        **mismatch,
+                    },
+                },
+                artifacts=[],
+                limitations=[reason],
+                raw_output={"schema_mismatch": True, **mismatch},
+            )
+        canonical_columns = requested_features
+    else:
+        resolved_scope_source = "legacy_target_drop_fallback"
+        canonical_columns = common_non_label
+
+    contextual_columns = [
+        column for column in common_non_label if column not in canonical_columns
+    ]
+    excluded_columns = sorted(label_columns + contextual_columns, key=str)
+    reference_features = reference_df.loc[:, canonical_columns]
+    current_features = current_df.loc[:, canonical_columns]
 
     feature_tests: list[dict[str, Any]] = []
     skipped_columns: list[dict[str, str]] = []
-    for column in feature_columns:
+    for column in canonical_columns:
         reference_series = reference_features[column]
         current_series = current_features[column]
         try:
@@ -535,7 +645,9 @@ def run_drift(
             artifacts=[],
             limitations=[reason],
             raw_output={
-                "common_columns": [str(column) for column in common_columns],
+                "feature_scope_source": resolved_scope_source,
+                "common_columns": [str(column) for column in canonical_columns],
+                "contextual_columns": [str(column) for column in contextual_columns],
                 "excluded_columns": [str(column) for column in excluded_columns],
                 "skipped_columns": skipped_columns,
                 "evidently_result": evidently_result,
@@ -607,6 +719,11 @@ def run_drift(
         limitations.append(
             "Columns present in only one dataset were excluded from comparison."
         )
+    if contextual_columns:
+        limitations.append(
+            "Contextual dataset columns were excluded from the canonical model-input "
+            "drift score and are reported as supplementary scope information only."
+        )
 
     method_details = {
         "primary_engine": "Evidently",
@@ -617,6 +734,10 @@ def run_drift(
         "evidently_per_column_extractable": bool(evidently_drift),
     }
     metrics = {
+        "feature_scope_source": resolved_scope_source,
+        "model_feature_columns": [str(column) for column in canonical_columns],
+        "contextual_columns": [str(column) for column in contextual_columns],
+        "excluded_columns": [str(column) for column in excluded_columns],
         "canonical_source": canonical_source,
         "dataset_drift_detected": bool(dataset_drift_detected),
         "drift_share": round(drift_share, 6),
@@ -634,6 +755,26 @@ def run_drift(
         "uagf_dataset_drift_share_threshold": dataset_drift_threshold,
         "method_details": method_details,
     }
+    metrics["model_input_drift"] = {
+        "status": "completed",
+        "feature_scope_source": resolved_scope_source,
+        "features": [str(column) for column in canonical_columns],
+        "features_analyzed": features_analyzed,
+        "drifted_feature_count": len(drifted_features),
+        "drift_share": round(drift_share, 6),
+        "dataset_drift_detected": bool(dataset_drift_detected),
+    }
+    metrics["contextual_dataset_drift"] = {
+        "status": "supplementary_not_analyzed" if contextual_columns else "not_applicable",
+        "columns": [str(column) for column in contextual_columns],
+        "features_analyzed": 0,
+        "reason": (
+            "Contextual columns are disclosed separately and do not affect the "
+            "canonical model-input drift conclusion."
+            if contextual_columns
+            else "No contextual columns were present in both datasets."
+        ),
+    }
     artifact_payload = {
         **metrics,
         "evidently_result": evidently_result,
@@ -643,14 +784,15 @@ def run_drift(
     decision_text = "detected" if dataset_drift_detected else "not detected"
     summary = (
         f"The drift analysis compared {len(reference_df)} reference rows against "
-        f"{len(current_df)} current rows across {features_analyzed} common feature columns. "
+        f"{len(current_df)} current rows across {features_analyzed} authoritative "
+        "model-input feature columns. "
         f"{len(drifted_features)} feature(s) were flagged as drifted, producing a drift "
         f"share of {drift_share:.4f}. Using {canonical_source} as the canonical source "
         f"and the configured UAGF-XAI dataset-level threshold of "
         f"{dataset_drift_threshold:.2f}, dataset-level drift was {decision_text}."
     )
     key_findings = [
-        f"{features_analyzed} features were analyzed.",
+        f"{features_analyzed} model-input features were analyzed.",
         f"{len(drifted_features)} features were flagged as drifted.",
         f"Dataset-level drift share is {drift_share:.4f}.",
         f"Dataset-level drift was {decision_text} under the configured threshold.",
@@ -672,6 +814,11 @@ def run_drift(
         limitations=limitations,
         raw_output={
             "canonical_source": canonical_source,
+            "feature_scope_source": resolved_scope_source,
+            "model_feature_columns": [str(column) for column in canonical_columns],
+            "contextual_columns": [str(column) for column in contextual_columns],
+            "model_input_drift": metrics["model_input_drift"],
+            "contextual_dataset_drift": metrics["contextual_dataset_drift"],
             "dataset_drift_detected": bool(dataset_drift_detected),
             "drift_share": round(drift_share, 6),
             "drifted_feature_count": len(drifted_features),
@@ -688,7 +835,7 @@ def run_drift(
                 "categorical_distance": categorical_threshold,
                 "uagf_dataset_drift_share": dataset_drift_threshold,
             },
-            "common_columns": [str(column) for column in feature_columns],
+            "common_columns": [str(column) for column in canonical_columns],
             "excluded_columns": [str(column) for column in excluded_columns],
             "reference_only_columns": [str(column) for column in reference_only],
             "current_only_columns": [str(column) for column in current_only],

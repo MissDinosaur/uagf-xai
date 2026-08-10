@@ -243,6 +243,16 @@
     </div>
     <div class="callout limitation"><strong>Runtime measurement scope:</strong> {{ report.runtime_reproducibility.measurement_scope }}</div>
 
+    <h3>Dependency Versions</h3>
+    <div class="table-wrap"><table><thead><tr><th>Dependency</th><th>Version</th><th>Scope</th></tr></thead><tbody>
+      {% for row in report.runtime_reproducibility.dependency_rows %}<tr><td>{{ row.name }}</td><td>{{ row.version }}</td><td>{{ row.scope }}</td></tr>{% endfor %}
+    </tbody></table></div>
+
+    <h3>Input Provenance</h3>
+    <div class="table-wrap"><table><thead><tr><th>Input</th><th>Status</th><th>Project-relative path</th><th>SHA-256</th><th>Files</th></tr></thead><tbody>
+      {% for row in report.runtime_reproducibility.provenance_rows %}<tr><td>{{ row.name }}</td><td>{{ row.status }}</td><td>{{ row.path }}</td><td>{{ row.sha256 }}</td><td>{{ row.included_file_count }}</td></tr>{% endfor %}
+    </tbody></table></div>
+
     <h3>Runtime per method</h3>
     <div class="table-wrap"><table><thead><tr><th>Method</th><th>Status</th><th>Runtime seconds</th></tr></thead><tbody>
       {% for row in report.runtime_reproducibility.runtime_rows %}<tr><td>{{ row.method }}</td><td><span class="status-badge {{ row.status.css_class }}">{{ row.status.label }}</span></td><td>{{ row.runtime_seconds }}</td></tr>{% endfor %}
@@ -297,6 +307,7 @@
         {% if finding.key_findings %}<ul>{% for item in finding.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
         {% if finding.metrics %}<div class="facts-grid">{% for metric in finding.metrics %}<div class="fact"><span class="fact-label">{{ metric.label }}</span><span class="fact-value">{{ metric.value }}</span></div>{% endfor %}</div>{% endif %}
         {% if finding.policy_table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.policy_table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.policy_table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
+        {% if finding.scope_table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.scope_table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.scope_table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.table_intro %}<p>{{ finding.table_intro }}</p>{% endif %}
         {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.secondary_table_title %}<h3>{{ finding.secondary_table_title }}</h3>{% endif %}

@@ -489,9 +489,10 @@ def test_report_renders_structured_dice_evidence_under_explainability(
         summary="Structured counterfactual explanation.",
         key_findings=["One counterfactual was generated."],
         metrics={
-            "counterfactual_policy_source": "s5_immutable_exclusions",
+            "counterfactual_policy_source": "audit_context_immutable_exclusions",
             "counterfactual_policy_status": "validated",
-            "counterfactual_actionable_feature_allowlist": None,
+            "actionable_feature_columns": None,
+            "immutable_feature_columns": ["age", "credit_history"],
             "excluded_sensitive_features": ["personal_status", "foreign_worker"],
             "excluded_immutable_features": ["age", "credit_history"],
             "excluded_non_actionable_features": [],
@@ -531,7 +532,7 @@ def test_report_renders_structured_dice_evidence_under_explainability(
         artifacts=["outputs/dice/test_counterfactuals.json"],
         limitations=["Domain review is required."],
         raw_output={
-            "counterfactual_policy_source": "s5_immutable_exclusions",
+            "counterfactual_policy_source": "audit_context_immutable_exclusions",
             "counterfactual_policy_status": "validated",
             "excluded_sensitive_features": ["personal_status", "foreign_worker"],
             "excluded_immutable_features": ["age", "credit_history"],
@@ -560,12 +561,12 @@ def test_report_renders_structured_dice_evidence_under_explainability(
     assert "Changed Features Count" in html
     assert "Counterfactual policy item" in html
     assert "Policy source" in html
-    assert "s5_immutable_exclusions" in html
+    assert "audit_context_immutable_exclusions" in html
     assert "Policy validation status" in html
     assert "personal_status, foreign_worker" in html
     assert "age, credit_history" in html
     assert "income, duration" in html
-    assert html.count("s5_immutable_exclusions") >= 2
+    assert html.count("audit_context_immutable_exclusions") >= 2
     assert "1 (label meaning unavailable)" in html
     assert "0 (label meaning unavailable)" in html
     assert (
@@ -623,3 +624,139 @@ def test_report_uses_explicit_prediction_label_mapping_when_available(
 
     assert "1 (bad credit risk)" in html
     assert "0 (good credit risk)" in html
+
+
+def test_report_shows_abbreviated_hashes_and_raw_appendix_keeps_full_hashes(
+    tmp_path, monkeypatch, traditional_audit_context, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    input_paths = {}
+    for name in ("s4", "s5", "model", "train", "evaluation"):
+        path = tmp_path / f"{name}.bin"
+        path.write_bytes(name.encode("utf-8"))
+        input_paths[name] = path
+    governance_context.source_json_path = input_paths["s4"]
+    traditional_audit_context.source_json_path = input_paths["s5"]
+    traditional_audit_context.model_artifact_uri = str(input_paths["model"])
+    traditional_audit_context.training_dataset_uri = str(input_paths["train"])
+    traditional_audit_context.evaluation_dataset_uri = str(
+        input_paths["evaluation"]
+    )
+
+    report_generator.generate_report(
+        {"_cbep_trace": _trace([])},
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+        runtime_context={
+            "run_timestamp": "2026-08-06T12:30:00+02:00",
+            "run_id": "fixed-run-id",
+        },
+    )
+    html = output.read_text(encoding="utf-8")
+    from report.runtime_metadata import sha256_file
+
+    full_hash = sha256_file(input_paths["model"])
+    runtime_section = html.split(
+        '<section id="runtime-reproducibility">', 1
+    )[1].split("</section>", 1)[0]
+    raw_section = html.split('<section id="raw-evidence">', 1)[1]
+
+    assert "Dependency Versions" in runtime_section
+    assert "Input Provenance" in runtime_section
+    assert f"{full_hash[:12]}…" in runtime_section
+    assert full_hash not in runtime_section
+    assert full_hash in raw_section
+    assert "Raw Reproducibility metadata JSON" in raw_section
+    assert "fixed-run-id" in html
+
+
+def test_user_facing_html_excludes_internal_git_metadata(
+    tmp_path, monkeypatch, traditional_audit_context, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    from report import runtime_metadata
+
+    git_state = {
+        "status": "available",
+        "commit_sha": "deadbeef" * 5,
+        "branch": "private-research-branch",
+        "dirty": True,
+    }
+    monkeypatch.setattr(runtime_metadata, "collect_git_metadata", lambda root: git_state)
+
+    report_generator.generate_report(
+        {"_cbep_trace": _trace([])},
+        "high",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    for prohibited in (
+        "Git commit",
+        "Git branch",
+        "Git dirty",
+        "commit_sha",
+        "private-research-branch",
+        '"dirty": true',
+    ):
+        assert prohibited not in html
+    assert "CBEP version" in html
+    assert "Evidence schema / report version" in html
+    assert "Dependency Versions" in html
+    assert "Input Provenance" in html
+    assert "SHA-256" in html
+
+
+def test_harbour_report_labels_13_model_features_and_contextual_columns(
+    tmp_path, monkeypatch, traditional_audit_context, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    model_features = [f"model_feature_{index}" for index in range(13)]
+    drift = completed_evidence(
+        evidence_id="DRIFT-EVIDENTLY",
+        layer="drift",
+        method="Evidently + Feature Drift Tests",
+        article_mapping=["Art. 15", "Art. 61"],
+        summary="Canonical model-input drift used 13 fitted model features.",
+        key_findings=["13 model-input features were analyzed."],
+        metrics={
+            "feature_scope_source": "model_artifact_feature_cols",
+            "model_feature_columns": model_features,
+            "contextual_columns": ["crane_id", "visibility_m"],
+            "contextual_dataset_drift": {
+                "status": "supplementary_not_analyzed"
+            },
+            "dataset_drift_detected": False,
+            "drift_share": 0.076923,
+            "drifted_feature_count": 1,
+            "features_analyzed": 13,
+            "canonical_feature_tests": [],
+        },
+        raw_output={
+            "feature_scope_source": "model_artifact_feature_cols",
+            "model_feature_columns": model_features,
+            "contextual_columns": ["crane_id", "visibility_m"],
+            "features_analyzed": 13,
+        },
+    )
+
+    report_generator.generate_report(
+        {"drift": drift, "_cbep_trace": _trace(["drift"])},
+        "high",
+        provider_name="HarbourLogistik GmbH",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "Feature scope source" in html
+    assert "model_artifact_feature_cols" in html
+    assert "Supplementary contextual / excluded columns" in html
+    assert "crane_id, visibility_m" in html
+    assert "Model-input drift not detected; share 0.076923" in html
+    assert html.count("model_feature_") >= 26

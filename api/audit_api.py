@@ -26,6 +26,7 @@ class EvaluationViews:
     sensitive_data: pd.DataFrame | None
     feature_columns: list[str]
     sensitive_feature_columns: list[str]
+    feature_scope_source: str
 
 
 def _build_evaluation_views(
@@ -35,6 +36,7 @@ def _build_evaluation_views(
     feature_columns,
     sensitive_feature_columns,
     modality,
+    feature_scope_source=None,
 ) -> EvaluationViews:
     if not isinstance(evaluation_dataset, pd.DataFrame):
         raise TypeError("The S5 evaluation dataset must load as a pandas DataFrame.")
@@ -91,6 +93,14 @@ def _build_evaluation_views(
         sensitive_data=sensitive_data,
         feature_columns=model_columns,
         sensitive_feature_columns=sensitive_columns,
+        feature_scope_source=(
+            feature_scope_source
+            or (
+                "audit_context_feature_columns"
+                if feature_columns
+                else "legacy_target_drop_fallback"
+            )
+        ),
     )
 
 
@@ -106,12 +116,25 @@ def _load_s5_resources(audit_context):
             )
         return resources, golden_set
 
+    artifact_feature_columns = getattr(resources, "model_feature_columns", None)
+    audit_feature_columns = getattr(audit_context, "feature_columns", None)
+    if artifact_feature_columns:
+        effective_feature_columns = list(artifact_feature_columns)
+        feature_scope_source = "model_artifact_feature_cols"
+    elif audit_feature_columns:
+        effective_feature_columns = list(audit_feature_columns)
+        feature_scope_source = "audit_context_feature_columns"
+    else:
+        effective_feature_columns = None
+        feature_scope_source = "legacy_target_drop_fallback"
+
     views = _build_evaluation_views(
         resources.evaluation_dataset,
         target_column=getattr(audit_context, "target_column", None),
-        feature_columns=getattr(audit_context, "feature_columns", None),
+        feature_columns=effective_feature_columns,
         sensitive_feature_columns=audit_context.sensitive_feature_columns,
         modality=audit_context.modality,
+        feature_scope_source=feature_scope_source,
     )
     return resources, views
 
@@ -145,6 +168,10 @@ def _build_resource_context(audit_context, resource_bundle):
         "guardrail_config": getattr(resource_bundle, "guardrail_config", None),
         "model_metadata": model_metadata,
         "feature_columns": getattr(audit_context, "feature_columns", None),
+        "model_feature_columns": getattr(resource_bundle, "model_feature_columns", None),
+        "model_feature_scope_source": getattr(
+            resource_bundle, "model_feature_scope_source", None
+        ),
         "sensitive_feature_columns": getattr(
             audit_context,
             "sensitive_feature_columns",
@@ -246,6 +273,7 @@ def audit_with_detailed_data(
     evaluation_frame=None,
     sensitive_data=None,
     feature_columns=None,
+    feature_scope_source=None,
     generate_pdf=True,
     run_started_at=None,
 ):
@@ -282,15 +310,21 @@ def audit_with_detailed_data(
         evaluation_frame=evaluation_frame,
         sensitive_data=sensitive_data,
         feature_columns=feature_columns,
+        feature_scope_source=(
+            feature_scope_source
+            or (
+                "audit_context_feature_columns"
+                if getattr(audit_context, "feature_columns", None)
+                else "legacy_target_drop_fallback"
+            )
+        ),
         modality=audit_context.modality,
         positive_label=getattr(audit_context, "positive_label", 1),
         target_column=getattr(audit_context, "target_column", None),
-        counterfactual_actionable_features=getattr(
-            audit_context, "counterfactual_actionable_feature_columns", None
+        actionable_feature_columns=getattr(
+            audit_context, "actionable_feature_columns", None
         ),
-        counterfactual_immutable_features=getattr(
-            audit_context, "counterfactual_immutable_feature_columns", []
-        ),
+        immutable_feature_columns=getattr(audit_context, "immutable_feature_columns", []),
     )
 
     results["_cbep_trace"] = {
@@ -359,6 +393,7 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
         evaluation_frame=views.evaluation_frame if views else None,
         sensitive_data=views.sensitive_data if views else None,
         feature_columns=views.feature_columns if views else None,
+        feature_scope_source=views.feature_scope_source if views else None,
         generate_pdf=generate_pdf,
         run_started_at=run_started_at,
     )

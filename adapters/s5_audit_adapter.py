@@ -68,8 +68,8 @@ class AuditContext:
     positive_label: str | int | None = None
     feature_columns: list[str] | None = None
     sensitive_feature_columns: list[str] = field(default_factory=list)
-    counterfactual_actionable_feature_columns: list[str] | None = None
-    counterfactual_immutable_feature_columns: list[str] = field(default_factory=list)
+    actionable_feature_columns: list[str] | None = None
+    immutable_feature_columns: list[str] = field(default_factory=list)
 
     # LLM / Agentic resources
     golden_set_uri: str | None = None
@@ -318,13 +318,13 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         str(item) for item in sensitive_feature_columns if item not in ("", None)
     ]
     actionable_columns = _coerce_policy_columns(
-        stage_b.get("counterfactual_actionable_feature_columns"),
-        "counterfactual_actionable_feature_columns",
+        stage_b.get("actionable_feature_columns"),
+        "actionable_feature_columns",
         None,
     )
     immutable_columns = _coerce_policy_columns(
-        stage_b.get("counterfactual_immutable_feature_columns"),
-        "counterfactual_immutable_feature_columns",
+        stage_b.get("immutable_feature_columns"),
+        "immutable_feature_columns",
         [],
     )
 
@@ -369,8 +369,8 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
         positive_label=positive_label,
         feature_columns=feature_columns,
         sensitive_feature_columns=sensitive_feature_columns,
-        counterfactual_actionable_feature_columns=actionable_columns,
-        counterfactual_immutable_feature_columns=immutable_columns,
+        actionable_feature_columns=actionable_columns,
+        immutable_feature_columns=immutable_columns,
         golden_set_uri=golden_set_uri,
         system_prompt_uri=system_prompt_uri,
         rag_manifest_uri=rag_manifest_uri,

@@ -138,11 +138,12 @@ def execute(
     evaluation_frame=None,
     sensitive_data=None,
     feature_columns=None,
+    feature_scope_source=None,
     modality=None,
     positive_label=1,
     target_column=None,
-    counterfactual_actionable_features=None,
-    counterfactual_immutable_features=None,
+    actionable_feature_columns=None,
+    immutable_feature_columns=None,
 ):
 
     results = {}
@@ -266,6 +267,7 @@ def execute(
                 model=model,
                 modality=modality,
                 feature_columns=feature_columns,
+                feature_scope_source=feature_scope_source,
                 sensitive_feature_columns=sensitive_features,
                 target_column=target_column,
                 provider_name=provider_name,
@@ -283,8 +285,8 @@ def execute(
                     provider_name=provider_name,
                     output_namespace=output_namespace,
                     sensitive_features=sensitive_features,
-                    actionable_features=counterfactual_actionable_features,
-                    immutable_features=counterfactual_immutable_features,
+                    actionable_feature_columns=actionable_feature_columns,
+                    immutable_feature_columns=immutable_feature_columns,
                     target_column=target_column,
                 )
             )

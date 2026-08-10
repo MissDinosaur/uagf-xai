@@ -33,6 +33,10 @@ class ResourceBundle:
 
     model_metadata: dict[str, Any] = field(default_factory=dict)
 
+    model_feature_columns: list[str] | None = None
+
+    model_feature_scope_source: str | None = None
+
     training_dataset: pd.DataFrame | None = None
 
     evaluation_dataset: pd.DataFrame | None = None

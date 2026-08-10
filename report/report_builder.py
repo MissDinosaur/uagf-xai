@@ -316,6 +316,20 @@ def build_executive_summary(results, audit_context, governance_context, provider
             "The LLM / Agentic resource contract and golden-set inputs were validated, "
             "but execution-level evidence remains limited by model loadability."
         )
+    drift_result = results.get("drift")
+    if isinstance(drift_result, dict) and _result_status(drift_result) == "completed":
+        drift_metrics = drift_result.get("metrics", {})
+        decision = (
+            "detected"
+            if drift_metrics.get("dataset_drift_detected")
+            else "not detected"
+        )
+        paragraphs.append(
+            "Canonical model-input drift was "
+            f"{decision} across {drift_metrics.get('features_analyzed', 0)} "
+            "authoritative model features, with a drift share of "
+            f"{drift_metrics.get('drift_share', 'not reported')}."
+        )
 
     return {
         "paragraphs": paragraphs,
@@ -584,7 +598,7 @@ def _main_output(token: str, result: Any, status: str) -> str:
     if token == "drift":
         decision = "detected" if metrics.get("dataset_drift_detected") else "not detected"
         return (
-            f"Dataset drift {decision}; share "
+            f"Model-input drift {decision}; share "
             f"{metrics.get('drift_share', 'not reported')}"
         )
     if token == "dice":
@@ -668,6 +682,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
     table = None
     table_intro = None
     policy_table = None
+    scope_table = None
     secondary_table = None
     secondary_table_title = None
 
@@ -736,7 +751,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                     "Actionable feature allowlist",
                     _display(
                         evidence_metrics.get(
-                            "counterfactual_actionable_feature_allowlist"
+                            "actionable_feature_columns"
                         ),
                         "Not supplied",
                     ),
@@ -823,6 +838,31 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                 ],
             }
     elif token == "drift":
+        scope_table = {
+            "headers": ["Drift scope item", "Applied value"],
+            "rows": [
+                [
+                    "Feature scope source",
+                    _display(evidence_metrics.get("feature_scope_source")),
+                ],
+                [
+                    "Canonical model-input features",
+                    _display(evidence_metrics.get("model_feature_columns"), "None"),
+                ],
+                [
+                    "Supplementary contextual / excluded columns",
+                    _display(evidence_metrics.get("contextual_columns"), "None"),
+                ],
+                [
+                    "Contextual drift status",
+                    _display(
+                        evidence_metrics.get("contextual_dataset_drift", {}).get(
+                            "status"
+                        )
+                    ),
+                ],
+            ],
+        }
         text_tests = evidence_metrics.get("derived_feature_tests") or []
         table = {
             "headers": [
@@ -890,6 +930,7 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
         "key_findings": list(result.get("key_findings") or []),
         "metrics": metric_cards,
         "policy_table": policy_table,
+        "scope_table": scope_table,
         "table": table,
         "table_intro": table_intro,
         "secondary_table": secondary_table,
@@ -986,17 +1027,60 @@ def build_runtime_reproducibility(
     except (TypeError, ValueError):
         total_runtime_display = "Unavailable"
 
+    project_state = runtime_context.get("project_state") or {}
     common_facts = [
+        {"label": "Run ID", "value": _display(runtime_context.get("run_id"))},
         {"label": "Run timestamp", "value": _display(runtime_context.get("run_timestamp"))},
         {"label": "Python version", "value": _display(runtime_context.get("python_version"))},
         {"label": "Platform", "value": _display(runtime_context.get("platform"))},
         {"label": "Total runtime", "value": total_runtime_display},
+        {"label": "CBEP version", "value": _display(project_state.get("cbep_version"))},
+        {
+            "label": "Evidence schema / report version",
+            "value": (
+                f"{_display(project_state.get('evidence_schema_version'))} / "
+                f"{_display(project_state.get('report_version'))}"
+            ),
+        },
         {"label": "HTML report path", "value": _display(runtime_context.get("html_report_path"))},
         {"label": "PDF report path", "value": _display(runtime_context.get("pdf_report_path") if runtime_context.get("pdf_generated") else None, "Not generated")},
     ]
 
+    dependency_rows = [
+        {
+            "name": name,
+            "version": version,
+            "scope": "LLM / Agentic" if name in {
+                "torch",
+                "transformers",
+                "sentence-transformers",
+                "peft",
+            } else "Core",
+        }
+        for name, version in (runtime_context.get("dependency_versions") or {}).items()
+    ]
+    provenance_rows = []
+    for name, record in (runtime_context.get("input_provenance") or {}).items():
+        full_hash = str(record.get("sha256", "unavailable"))
+        abbreviated_hash = (
+            f"{full_hash[:12]}…" if len(full_hash) == 64 else full_hash
+        )
+        provenance_rows.append(
+            {
+                "name": name.replace("_", " ").title(),
+                "status": record.get("status", "unavailable"),
+                "path": record.get("path", "unavailable"),
+                "sha256": abbreviated_hash,
+                "included_file_count": record.get(
+                    "included_file_count", "not_applicable"
+                ),
+            }
+        )
+
     return {
         "common_facts": common_facts,
+        "dependency_rows": dependency_rows,
+        "provenance_rows": provenance_rows,
         "runtime_rows": runtime_rows,
         "artifact_rows": artifact_rows,
         "measurement_scope": _display(runtime_context.get("measurement_scope")),

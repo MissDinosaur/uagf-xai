@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import pandas as pd
 import pytest
 
-from adapters.s5_audit_adapter import AuditContext
+from adapters.s5_audit_adapter import AuditAdapter, AuditContext
+from api.audit_api import _load_s5_resources
 from layers.drift import evidently_runner
 from pipeline.evidence_normalizer import REQUIRED_FIELDS
 from report.report_builder import build_evidence_coverage_matrix
@@ -200,7 +202,70 @@ def test_report_drift_summary_uses_the_same_canonical_values(monkeypatch):
     )
 
     assert "1 feature(s) were flagged as drifted" in result["summary"]
-    assert rows[-1]["main_output"] == "Dataset drift detected; share 1.0"
+    assert rows[-1]["main_output"] == "Model-input drift detected; share 1.0"
+
+
+def test_contextual_column_drift_cannot_flip_model_input_drift():
+    reference = pd.DataFrame(
+        {"model_value": range(20), "entity_id": ["A"] * 20, "target": [0] * 20}
+    )
+    current = pd.DataFrame(
+        {"model_value": range(20), "entity_id": ["B"] * 20, "target": [1] * 20}
+    )
+
+    result = evidently_runner.run_drift(
+        current,
+        reference_data=reference,
+        feature_columns=["model_value"],
+        feature_scope_source="model_artifact_feature_cols",
+        target_column="target",
+    )
+    metrics = result["metrics"]
+
+    assert metrics["dataset_drift_detected"] is False
+    assert metrics["drift_share"] == 0.0
+    assert metrics["features_analyzed"] == 1
+    assert metrics["contextual_columns"] == ["entity_id"]
+    assert metrics["contextual_dataset_drift"]["status"] == "supplementary_not_analyzed"
+    assert set(result["raw_output"]["excluded_columns"]) == {"entity_id", "target"}
+
+
+def test_missing_authoritative_model_feature_returns_schema_mismatch():
+    reference = pd.DataFrame({"required": [1, 2], "other": [3, 4]})
+    current = pd.DataFrame({"other": [3, 4]})
+
+    result = evidently_runner.run_drift(
+        current,
+        reference_data=reference,
+        feature_columns=["required"],
+        feature_scope_source="model_artifact_feature_cols",
+    )
+
+    assert result["status"] == "skipped"
+    assert result["metrics"]["missing_current_model_features"] == ["required"]
+    assert result["metrics"]["model_input_drift"]["status"] == "schema_mismatch"
+    assert "did not match both datasets" in result["limitations"][0]
+
+
+def test_harbour_scope_comes_from_loaded_artifact_and_has_13_features():
+    path = "data/03_harbourlogistik_gmbh/s5_harbourlogistik_gmbh_audit_state.json"
+    with open(path, encoding="utf-8") as input_file:
+        context = AuditAdapter.from_audit_report(json.load(input_file))
+    resources, views = _load_s5_resources(context)
+
+    result = evidently_runner.run_drift(
+        resources.evaluation_dataset,
+        reference_data=resources.training_dataset,
+        feature_columns=views.feature_columns,
+        feature_scope_source=views.feature_scope_source,
+        target_column=context.target_column,
+    )
+
+    assert views.feature_scope_source == "model_artifact_feature_cols"
+    assert len(views.feature_columns) == 13
+    assert result["metrics"]["features_analyzed"] == 13
+    assert result["raw_output"]["contextual_columns"] == ["crane_id", "visibility_m"]
+    assert len(result["raw_output"]["model_feature_columns"]) == 13
 
 
 @pytest.mark.parametrize(

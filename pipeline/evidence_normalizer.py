@@ -274,6 +274,14 @@ def _normalize_drift(raw: dict) -> dict:
             f"{raw.get('features_analyzed')} features were analyzed.",
         ],
         metrics={
+            "feature_scope_source": raw.get("feature_scope_source"),
+            "model_feature_columns": deepcopy(raw.get("model_feature_columns") or []),
+            "contextual_columns": deepcopy(raw.get("contextual_columns") or []),
+            "excluded_columns": deepcopy(raw.get("excluded_columns") or []),
+            "model_input_drift": deepcopy(raw.get("model_input_drift") or {}),
+            "contextual_dataset_drift": deepcopy(
+                raw.get("contextual_dataset_drift") or {}
+            ),
             "canonical_source": raw.get("canonical_source"),
             "dataset_drift_detected": raw.get("dataset_drift_detected"),
             "drift_share": raw.get("drift_share"),
@@ -300,9 +308,8 @@ def _dice_policy_metrics(raw: dict) -> dict:
     return {
         "counterfactual_policy_source": raw.get("counterfactual_policy_source"),
         "counterfactual_policy_status": raw.get("counterfactual_policy_status"),
-        "counterfactual_actionable_feature_allowlist": deepcopy(
-            raw.get("counterfactual_actionable_feature_allowlist")
-        ),
+        "actionable_feature_columns": deepcopy(raw.get("actionable_feature_columns")),
+        "immutable_feature_columns": list(raw.get("immutable_feature_columns") or []),
         "excluded_sensitive_features": list(raw.get("excluded_sensitive_features") or []),
         "excluded_immutable_features": list(raw.get("excluded_immutable_features") or []),
         "excluded_non_actionable_features": list(

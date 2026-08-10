@@ -7,7 +7,10 @@ from report.report_builder import build_report_model
 from report.pdf_exporter import PDFExportError, export_html_to_pdf
 from report.method_titles import REPORT_METHOD_TITLES, report_method_title
 from report.method_ordering import ordered_cbep_trace, ordered_result_keys
-from report.runtime_metadata import collect_runtime_environment
+from report.runtime_metadata import (
+    collect_reproducibility_metadata,
+    public_report_reproducibility_metadata,
+)
 
 
 def _to_json_pretty(value):
@@ -18,6 +21,8 @@ def _to_json_pretty(value):
 def _section_label(key: str) -> str:
     if key == "_cbep_trace":
         return "CBEP planning trace"
+    if key == "_reproducibility":
+        return "Reproducibility metadata"
     if key in REPORT_METHOD_TITLES:
         return report_method_title(key)
 
@@ -80,14 +85,23 @@ def generate_report(
     pdf_path = str(Path(output_path).with_suffix(".pdf"))
 
     supplied_runtime_context = runtime_context or {}
-    report_runtime_context = collect_runtime_environment(
-        supplied_runtime_context.get("run_timestamp")
+    supplied_runtime_context.setdefault(
+        "cbep_version",
+        (results.get("_cbep_trace") or {}).get("cbep_version", "unavailable"),
+    )
+    internal_runtime_context = collect_reproducibility_metadata(
+        audit_context=audit_context,
+        governance_context=governance_context,
+        runtime_context=supplied_runtime_context,
+    )
+    report_runtime_context = public_report_reproducibility_metadata(
+        internal_runtime_context
     )
     report_runtime_context.update(
         {
             key: value
             for key, value in supplied_runtime_context.items()
-            if key != "run_timestamp"
+            if key not in {"run_timestamp", "run_id"}
         }
     )
     report_runtime_context.update(
@@ -95,6 +109,15 @@ def generate_report(
             "html_report_path": output_path,
             "pdf_report_path": pdf_path,
             "pdf_generated": bool(generate_pdf),
+        }
+    )
+
+    report_sections = _ordered_report_sections(results)
+    report_sections.append(
+        {
+            "key": "_reproducibility",
+            "label": "Reproducibility metadata",
+            "value": report_runtime_context["reproducibility"],
         }
     )
 
@@ -108,7 +131,7 @@ def generate_report(
             runtime_context=report_runtime_context,
         )
         return template.render(
-            sections=_ordered_report_sections(results),
+            sections=report_sections,
             risk_level=risk_level,
             timestamp=report_runtime_context["run_timestamp"],
             provider_name=case_name,

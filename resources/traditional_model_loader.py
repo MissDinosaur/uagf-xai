@@ -44,6 +44,11 @@ class EncodedSklearnModel(BaseEstimator, ClassifierMixin):
         """Return the underlying sklearn estimator."""
         return self.model
 
+    @property
+    def model_feature_columns(self):
+        """Return the artifact-declared model input columns in fitted order."""
+        return list(self._feature_cols)
+
     def prepare_input(self, X):
         """Convert raw feature data into model-ready numeric data."""
         if not isinstance(X, pd.DataFrame):
@@ -188,6 +193,11 @@ class SklearnTextModelAdapter:
         self.vectorizer_class = type(vectorizer).__name__
         self.estimator_class = type(estimator).__name__
         self.vocabulary_size = len(vectorizer.vocabulary_)
+
+    @property
+    def model_feature_columns(self):
+        """Return the raw text column consumed by the fitted pipeline."""
+        return [self.text_feature_column]
 
     @classmethod
     def from_artifact(cls, artifact):

@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import pandas as pd
 
 from adapters.s5_audit_adapter import AuditContext
+from api.audit_api import _load_s5_resources
 from resources.loader import ResourceLoader
+from resources.resource_bundle import ResourceBundle
 
 
 def _patch_model_loading(monkeypatch, model=None, metadata=None):
@@ -91,3 +93,30 @@ def test_system_type_is_authoritative_for_resource_contract_selection():
     )
 
     assert ResourceLoader._is_llm_contract(context) is False
+
+
+def test_artifact_feature_columns_take_precedence_over_audit_context(monkeypatch):
+    training = pd.DataFrame(
+        {"artifact_feature": [1], "audit_feature": [2], "target": [0]}
+    )
+    evaluation = training.copy()
+    bundle = ResourceBundle(
+        model=object(),
+        model_feature_columns=["artifact_feature"],
+        model_feature_scope_source="model_artifact_feature_cols",
+        training_dataset=training,
+        evaluation_dataset=evaluation,
+    )
+    monkeypatch.setattr(ResourceLoader, "load_bundle", lambda context: bundle)
+    context = AuditContext(
+        system_type="traditional_ml",
+        modality="tabular",
+        task_type="binary_classification",
+        feature_columns=["audit_feature"],
+        target_column="target",
+    )
+
+    _, views = _load_s5_resources(context)
+
+    assert views.feature_columns == ["artifact_feature"]
+    assert views.feature_scope_source == "model_artifact_feature_cols"

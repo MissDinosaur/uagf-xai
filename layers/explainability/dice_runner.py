@@ -38,19 +38,19 @@ def _encode_for_dice(X: pd.DataFrame):
 def _resolve_feature_policy(
     model_features,
     sensitive_features,
-    actionable_features,
-    immutable_features,
+    actionable_feature_columns,
+    immutable_feature_columns,
     target_column,
 ):
-    """Validate the S5 policy and return the exact DiCE feature allowlist."""
+    """Validate normalized audit metadata and return the DiCE feature allowlist."""
     model_features = list(model_features)
     model_feature_set = set(model_features)
     sensitive = list(dict.fromkeys(sensitive_features or []))
-    immutable = list(immutable_features or [])
+    immutable = list(immutable_feature_columns or [])
 
     for field_name, values in (
-        ("counterfactual_actionable_feature_columns", actionable_features),
-        ("counterfactual_immutable_feature_columns", immutable),
+        ("actionable_feature_columns", actionable_feature_columns),
+        ("immutable_feature_columns", immutable),
     ):
         if values is None:
             continue
@@ -66,25 +66,29 @@ def _resolve_feature_policy(
 
     excluded_sensitive = [feature for feature in model_features if feature in sensitive]
     excluded_immutable = [feature for feature in model_features if feature in immutable]
-    if actionable_features is not None:
+    if actionable_feature_columns is not None:
         sensitive_conflicts = [
-            feature for feature in actionable_features if feature in excluded_sensitive
+            feature
+            for feature in actionable_feature_columns
+            if feature in excluded_sensitive
         ]
         if sensitive_conflicts:
             raise ValueError(
-                "counterfactual_actionable_feature_columns must not authorize "
-                f"S5 sensitive features: {sensitive_conflicts}"
+                "actionable_feature_columns must not authorize sensitive features: "
+                f"{sensitive_conflicts}"
             )
         immutable_conflicts = [
-            feature for feature in actionable_features if feature in excluded_immutable
+            feature
+            for feature in actionable_feature_columns
+            if feature in excluded_immutable
         ]
         if immutable_conflicts:
             raise ValueError(
                 "Counterfactual features cannot be both actionable and immutable: "
                 f"{immutable_conflicts}"
             )
-        features_to_vary = list(actionable_features)
-        source = "s5_actionable_allowlist"
+        features_to_vary = list(actionable_feature_columns)
+        source = "audit_context_actionable_allowlist"
         excluded_non_actionable = [
             feature
             for feature in model_features
@@ -99,15 +103,22 @@ def _resolve_feature_policy(
             feature for feature in model_features if feature not in blocked
         ]
         excluded_non_actionable = []
-        source = "s5_immutable_exclusions" if immutable else "model_features_default"
+        source = (
+            "audit_context_immutable_exclusions"
+            if immutable
+            else "model_features_default"
+        )
         status = "validated" if immutable else "metadata_not_provided"
 
     return {
         "counterfactual_policy_source": source,
         "counterfactual_policy_status": status,
-        "counterfactual_actionable_feature_allowlist": (
-            list(actionable_features) if actionable_features is not None else None
+        "actionable_feature_columns": (
+            list(actionable_feature_columns)
+            if actionable_feature_columns is not None
+            else None
         ),
+        "immutable_feature_columns": immutable,
         "excluded_sensitive_features": excluded_sensitive,
         "excluded_immutable_features": excluded_immutable,
         "excluded_non_actionable_features": excluded_non_actionable,
@@ -248,8 +259,8 @@ def run_dice(
     provider_name=None,
     output_namespace="audit",
     sensitive_features=None,
-    actionable_features=None,
-    immutable_features=None,
+    actionable_feature_columns=None,
+    immutable_feature_columns=None,
     target_column=None,
 ):
     """Run DiCE and persist machine-readable counterfactual evidence."""
@@ -282,8 +293,8 @@ def run_dice(
     policy = _resolve_feature_policy(
         X_encoded.columns,
         sensitive_features,
-        actionable_features,
-        immutable_features,
+        actionable_feature_columns,
+        immutable_feature_columns,
         target_column,
     )
     permitted_features = policy["features_to_vary"]
@@ -425,7 +436,8 @@ def run_dice(
         )
     if policy["counterfactual_policy_status"] == "metadata_not_provided":
         limitations.append(
-            "S5 did not provide actionable or immutable feature metadata; generated "
+            "The audit context did not provide actionable or immutable feature "
+            "metadata; generated "
             "changes must not be described as actionable recommendations."
         )
 

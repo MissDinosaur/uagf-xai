@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from adapters.s4_governance_adapter import GovernanceAdapter
 from adapters.s5_audit_adapter import AuditAdapter, AuditContext
@@ -69,7 +70,9 @@ def _load_s4_governance_context(path: str | None):
         data = json.load(f)
 
     print(f"Loaded S4 governance JSON : {path}")
-    return GovernanceAdapter.from_cgsa_report(data)
+    context = GovernanceAdapter.from_cgsa_report(data)
+    context.source_json_path = Path(path).as_posix()
+    return context
 
 
 def _load_s5_audit_context(path: str):
@@ -77,7 +80,9 @@ def _load_s5_audit_context(path: str):
         data = json.load(f)
 
     print(f"Loaded S5 audit JSON      : {path}")
-    return AuditAdapter.from_audit_report(data)
+    context = AuditAdapter.from_audit_report(data)
+    context.source_json_path = Path(path).as_posix()
+    return context
 
 
 def _build_local_validation_audit_context(system_type: str) -> AuditContext:

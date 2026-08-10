@@ -54,6 +54,12 @@ class ResourceLoader:
         model = ResourceLoader.load_model(audit_context)
         tokenizer = ResourceLoader.load_tokenizer(audit_context)
         model_metadata = ResourceLoader.load_model_metadata(audit_context)
+        model_feature_columns = getattr(model, "model_feature_columns", None)
+        if model_feature_columns is None:
+            fitted_names = getattr(model, "feature_names_in_", None)
+            model_feature_columns = list(fitted_names) if fitted_names is not None else None
+        if model_feature_columns is not None:
+            model_feature_columns = list(model_feature_columns)
         for key in (
             "input_adapter",
             "text_feature_column",
@@ -70,6 +76,10 @@ class ResourceLoader:
             return ResourceBundle(
                 model=model,
                 model_metadata=model_metadata,
+                model_feature_columns=model_feature_columns,
+                model_feature_scope_source=(
+                    "model_artifact_feature_cols" if model_feature_columns else None
+                ),
                 tokenizer=tokenizer,
                 golden_dataset=llm_resources["golden_set"],
                 system_prompt=llm_resources["system_prompt"],
@@ -81,6 +91,10 @@ class ResourceLoader:
         return ResourceBundle(
             model=model,
             model_metadata=model_metadata,
+            model_feature_columns=model_feature_columns,
+            model_feature_scope_source=(
+                "model_artifact_feature_cols" if model_feature_columns else None
+            ),
             training_dataset=train_df,
             evaluation_dataset=eval_df,
             tokenizer=tokenizer,

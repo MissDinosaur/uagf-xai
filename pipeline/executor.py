@@ -53,7 +53,14 @@ def _normalize_llm_payload(payload):
         return {}
 
     if isinstance(payload, dict) and any(
-        key in payload for key in ("current_prompts", "reference_prompts", "fairness_pairs")
+        key in payload
+        for key in (
+            "current_prompts",
+            "reference_prompts",
+            "fairness_pairs",
+            "grounding_records",
+            "self_consistency_prompts",
+        )
     ):
         return payload
 
@@ -64,6 +71,7 @@ def _normalize_llm_payload(payload):
         current_prompts = []
         reference_prompts = []
         fairness_pairs = []
+        grounding_records = []
 
         for item in payload:
             if isinstance(item, dict):
@@ -72,6 +80,18 @@ def _normalize_llm_payload(payload):
 
                 if prompt is not None:
                     current_prompts.append(str(prompt))
+                    grounding_records.append(
+                        {
+                            "id": item.get("id"),
+                            "prompt": str(prompt),
+                            "context": str(item.get("context") or ""),
+                            "reference_text": str(
+                                item.get("answer")
+                                or item.get("reference")
+                                or ""
+                            ),
+                        }
+                    )
                 if answer is not None:
                     reference_prompts.append(str(answer))
                 elif prompt is not None:
@@ -96,6 +116,8 @@ def _normalize_llm_payload(payload):
             "current_prompts": current_prompts,
             "reference_prompts": reference_prompts,
             "fairness_pairs": fairness_pairs,
+            "grounding_records": grounding_records,
+            "self_consistency_prompts": current_prompts[:1],
             "golden_set": payload,
         }
 

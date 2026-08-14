@@ -170,6 +170,12 @@
 </head>
 <body>
 <main class="report-shell">
+  {% if report.validation_notice %}
+  <section class="callout warning">
+    <h2>{{ report.validation_notice.title }}</h2>
+    <p>{{ report.validation_notice.text }}</p>
+  </section>
+  {% endif %}
   <header class="report-header">
     <div class="eyebrow">Unified AI Governance Framework · S6 Evidence Report</div>
     <h1>UAGF-XAI Audit Report</h1>

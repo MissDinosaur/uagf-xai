@@ -84,6 +84,19 @@ def test_llm_skipped_output_becomes_unified_evidence():
     assert result["raw_output"] == raw
 
 
+def test_llm_failed_output_remains_failed():
+    raw = {
+        "status": "failed",
+        "error_type": "RuntimeError",
+        "reason": "generation returned no text",
+    }
+
+    result = normalize_evidence_results({LLM_GROUNDING: raw})[LLM_GROUNDING]
+
+    assert result["status"] == "failed"
+    assert "generation returned no text" in result["summary"]
+
+
 def test_existing_unified_evidence_is_preserved():
     unified = completed_evidence(
         evidence_id="CUSTOM",

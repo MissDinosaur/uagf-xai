@@ -7,6 +7,29 @@ def test_audit_context_does_not_expose_output_namespace():
     assert "output_namespace" not in AuditContext.__dataclass_fields__
 
 
+def test_s6_local_execution_fields_are_not_part_of_s5_contract(
+    traditional_s5_json,
+):
+    removed_fields = {
+        "evaluation_embedding_model",
+        "evaluation_embedding_model_uri",
+        "semantic_drift_dataset_uri",
+        "fairness_prompt_pairs_uri",
+        "validation_context_origin",
+        "governance_scenario_origin",
+    }
+    stage_b = traditional_s5_json["client_submission"]["stage_b"]
+    for field_name in removed_fields:
+        stage_b[field_name] = "must_be_ignored"
+    traditional_s5_json["validation_context_origin"] = "must_be_ignored"
+    traditional_s5_json["governance_scenario_origin"] = "must_be_ignored"
+
+    context = AuditAdapter.from_audit_report(traditional_s5_json)
+
+    assert removed_fields.isdisjoint(AuditContext.__dataclass_fields__)
+    assert all(not hasattr(context, field_name) for field_name in removed_fields)
+
+
 def test_traditional_stage_b_fields_are_mapped(traditional_s5_json):
     stage_b = traditional_s5_json["client_submission"]["stage_b"]
     stage_b["actionable_feature_columns"] = ["income"]

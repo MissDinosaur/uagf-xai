@@ -332,7 +332,6 @@ def _build_context(data: dict, stage_b: dict, stage_a: dict) -> AuditContext:
     system_prompt_uri = _coerce_optional_text(stage_b.get("system_prompt_uri"))
     rag_manifest_uri = _coerce_optional_text(stage_b.get("rag_manifest_uri"))
     guardrail_config_uri = _coerce_optional_text(stage_b.get("guardrail_config_uri"))
-
     task_type_raw = stage_b.get("task_type")
     normalized_task_type = _normalize_text(task_type_raw)
     if normalized_task_type and normalized_task_type not in get_args(TaskType):

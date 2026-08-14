@@ -95,6 +95,59 @@ S5 JSON -> AuditAdapter -> AuditContext -> ResourceLoader
 Evidence layers receive resolved models and data from the execution boundary;
 they do not parse S4/S5 JSON or load raw artifact URIs directly.
 
+### Project Workflow 
+```text
+
+Governance Context (S4)                          Audit Context (S5)
+(governance.json)                                (audit.json)
+        ↓                                               ↓
+Governance Adapter                               Audit Adapter
+        │                                                │
+        │                                                ▼
+        │                                        Resource Loader
+        │                                                │
+        │                                    ┌───────────┼────────────┐
+        │                                    ▼                        ▼
+        │                                  Model Loader          Dataset Loader
+        │                                    │                        │
+        │                                    └───────────┬────────────┘
+        │                                                │
+        │                                                ▼
+        │                                         ResourceBundle
+        │                                                │
+        └───────────────────────┬────────────────────────┘
+                                │
+                                ▼
+                              CBEP
+                    Constraint-Based Evidence Planner
+                                │
+                    ┌───────────┴───────────────────────┐
+                    ▼                                   ▼
+ ┌───────────────────────────────────┐   ┌───────────────────────────────────┐
+ │ if system_type in {llm, agentic}  │   │ else traditional ML system        │
+ ├───────────────────────────────────┤   ├───────────────────────────────────┤
+ │ LLM Layer 1: Explainability       │   │ Layer 1: Explainability (SHAP,    │
+ │ LLM Layer 2: Fairness             │   │          LIME, DiCE)              │
+ │ LLM Layer 3: Uncertainty          │   │ Layer 2: Fairness (Fairlearn)     │
+ │ LLM Layer 4: Drift                │   │ Layer 3: Uncertainty (MAPIE)      │
+ │                                   │   │ Layer 4: Drift (Evidently)        │
+ └──────────────────┬────────────────┘   └───────────────┬───────────────────┘
+                    │                                    │
+                    └───────────┬────────────────────────┘
+                                │
+                                ▼
+                         Evidence Schema
+                                ↓
+                Report Generator + PDF Generator
+                                ↓
+                         Audit Report
+```
+
+### CBEP Planner Workflo
+```text
+
+```
+
 ## Resource contracts
 
 Traditional ML cases use a model file, sklearn model bundle, or model directory,
@@ -122,6 +175,17 @@ python main.py --s4-json data/02_retailiq_ag/s4_retailiq-demandpulse-001.json --
 python main.py --s4-json data/03_harbourlogistik_gmbh/s4_harbourlogistik-harboursense-001.json --s5-json data/03_harbourlogistik_gmbh/s5_harbourlogistik_gmbh_audit_state.json
 python main.py --s4-json data/04_legalmindd_ai_ltd/s4_legalmindd-lexai-001.json --s5-json data/04_legalmindd_ai_ltd/s5_legalmindd_ai_ltd_audit_state.json
 ```
+
+The default runtime mode is `--mode s5`. The separate S6-owned local LLM
+execution-validation case is run with:
+
+```bash
+python main.py --mode local
+```
+
+Local mode reads `s6_local_llm_validation_config.json`; it does not pass that
+file through the S5 adapter. The formal `AuditContext` and S6 evaluation
+resources remain separate.
 
 Add `--no-pdf` for faster HTML-only validation.
 

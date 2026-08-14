@@ -259,7 +259,13 @@ def _compatibility_reason(token: str, task_type: str) -> str:
     return f"The method is not compatible with task type {task}."
 
 
-def build_executive_summary(results, audit_context, governance_context, provider_name):
+def build_executive_summary(
+    results,
+    audit_context,
+    governance_context,
+    provider_name,
+    resource_context=None,
+):
     selected = _selected_tokens(results)
     statuses = [_method_status(results, item) for item in selected]
     completed_tokens = [
@@ -285,12 +291,18 @@ def build_executive_summary(results, audit_context, governance_context, provider
     system_description = _executive_system_description(audit_context)
     method_text = _executive_method_summary(selected)
 
+    is_local_surrogate = bool((resource_context or {}).get("is_local_surrogate"))
+    if is_local_surrogate:
+        planning_context = (
+            "the local high-risk justice-domain validation context"
+        )
+    else:
+        planning_context = "the S4 governance context and S5 audit context"
     paragraphs = [
         (
             f"This audit report evaluates {provider_name}, a {risk}-risk "
             f"{system_description} in the {domain} domain. CBEP selected "
-            f"{method_text} using the "
-            "S4 governance context, S5 audit context, EU AI Act article mapping, "
+            f"{method_text} using {planning_context}, EU AI Act article mapping, "
             "governance priorities, and task compatibility rules."
         )
     ]
@@ -324,12 +336,25 @@ def build_executive_summary(results, audit_context, governance_context, provider
             if drift_metrics.get("dataset_drift_detected")
             else "not detected"
         )
-        paragraphs.append(
-            "Canonical model-input drift was "
-            f"{decision} across {drift_metrics.get('features_analyzed', 0)} "
-            "authoritative model features, with a drift share of "
-            f"{drift_metrics.get('drift_share', 'not reported')}."
+        is_talentsift_text = (
+            "talentsift" in str(provider_name or "").lower()
+            and str(_value(audit_context, "modality", "")).lower() == "text"
+            and drift_metrics.get("model_feature_columns") == ["cv_text"]
         )
+        if is_talentsift_text and decision == "detected":
+            paragraphs.append(
+                "Canonical text-input drift was detected for the authoritative "
+                "cv_text model input: three of four derived statistical "
+                "characteristics were flagged as drifted, producing a drift share "
+                f"of {drift_metrics.get('drift_share', 'not reported')}."
+            )
+        else:
+            paragraphs.append(
+                "Canonical model-input drift was "
+                f"{decision} across {drift_metrics.get('features_analyzed', 0)} "
+                "authoritative model features, with a drift share of "
+                f"{drift_metrics.get('drift_share', 'not reported')}."
+            )
 
     return {
         "paragraphs": paragraphs,
@@ -359,10 +384,14 @@ def build_executive_summary(results, audit_context, governance_context, provider
 
 
 def build_audit_scope(audit_context, governance_context, resource_context=None):
+    is_local_surrogate = bool((resource_context or {}).get("is_local_surrogate"))
     common_rows = [
         {"label": "S4 governance score", "value": _display(_value(governance_context, "governance_score"))},
         {"label": "S4 governance verdict", "value": _display(_value(governance_context, "governance_verdict"))},
-        {"label": "S5 risk tier", "value": _display(_value(audit_context, "risk_tier"))},
+        {
+            "label": "Audit-context risk tier" if is_local_surrogate else "S5 risk tier",
+            "value": _display(_value(audit_context, "risk_tier")),
+        },
         {"label": "Application domain", "value": _display(_value(audit_context, "application_domain"))},
         {"label": "System type / modality", "value": f"{_display(_value(audit_context, 'system_type'))} / {_display(_value(audit_context, 'modality'))}"},
         {"label": "CSP satisfied", "value": _display(_value(audit_context, "csp_satisfied"))},
@@ -402,6 +431,7 @@ def build_audit_scope(audit_context, governance_context, resource_context=None):
 
 def build_resource_summary(audit_context, resource_context):
     context = resource_context or {}
+    is_local_surrogate = bool(context.get("is_local_surrogate"))
     status = context.get("model_status") or "loaded"
     artifact_kind = context.get("artifact_kind")
     if not artifact_kind:
@@ -419,7 +449,8 @@ def build_resource_summary(audit_context, resource_context):
         )
 
     model_container = context.get("model_container")
-    narrative = f"The S5 model reference was resolved as a {artifact_kind.lower()}."
+    reference_owner = "local model reference" if is_local_surrogate else "S5 model reference"
+    narrative = f"The {reference_owner} was resolved as a {artifact_kind.lower()}."
     if model_container and status != "metadata_only":
         narrative += f" The executable entrypoint was loaded as {model_container}."
     if status == "metadata_only":
@@ -431,6 +462,13 @@ def build_resource_summary(audit_context, resource_context):
         )
 
     is_llm = _is_llm(audit_context)
+    if is_local_surrogate:
+        narrative = (
+            "Local surrogate execution validation. The original LegalMind model "
+            "weights were unavailable. DistilGPT2 was used as a locally executable "
+            "surrogate to validate the mechanics of the LLM evidence pathway. The "
+            "resulting scores are not an audit of the original LegalMind model."
+        )
     is_text = str(_value(audit_context, "modality", "") or "").lower() == "text"
     contract_name = (
         "LLM / Agentic golden-set contract"
@@ -490,6 +528,42 @@ def build_resource_summary(audit_context, resource_context):
             {"label": "RAG manifest URI", "value": _display(_value(audit_context, "rag_manifest_uri"))},
             {"label": "Guardrail config URI", "value": _display(_value(audit_context, "guardrail_config_uri"))},
             {"label": "Golden set loaded", "value": _display(context.get("golden_set_loaded"))},
+            {
+                "label": "Audited/surrogate generation model",
+                "value": "DistilGPT2" if is_local_surrogate else _display(
+                    _value(audit_context, "model_type")
+                ),
+            },
+            {
+                "label": "Evaluation embedding model",
+                "value": _display(
+                    context.get("evaluation_embedding_model_name"),
+                    "Not configured",
+                ),
+            },
+            {
+                "label": "Evaluation embedding path",
+                "value": _display(
+                    context.get("evaluation_embedding_metadata", {}).get(
+                        "resolved_path"
+                    )
+                ),
+            },
+            {
+                "label": "Embedding pooling / normalization",
+                "value": (
+                    f"{_display(context.get('evaluation_embedding_metadata', {}).get('pooling'))} / "
+                    f"{_display(context.get('evaluation_embedding_metadata', {}).get('normalization'))}"
+                ),
+            },
+            {
+                "label": "Offline local loading",
+                "value": _display(
+                    context.get("evaluation_embedding_metadata", {}).get(
+                        "local_files_only"
+                    )
+                ),
+            },
             {"label": "Metadata-only", "value": "Yes" if status == "metadata_only" else "No"},
             {"label": "Training dataset required", "value": "No"},
             {"label": "Evaluation dataset required", "value": "No"},
@@ -688,11 +762,14 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
 
     if token == "shap":
         ranked = evidence_metrics.get("feature_importance", [])
-        is_text = evidence_metrics.get("feature_semantics") == "tokens"
+        is_text = evidence_metrics.get("feature_semantics") in {
+            "tokens",
+            "tokens_and_ngrams",
+        }
         table = {
             "headers": [
                 "Rank",
-                "Token" if is_text else "Feature",
+                "Token / n-gram" if is_text else "Feature",
                 "Mean absolute SHAP value" if is_text else "Mean absolute importance",
             ],
             "rows": [
@@ -889,6 +966,24 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                     1,
                 )
             ],
+        }
+    elif token.startswith("llm_"):
+        generation = evidence_metrics.get("generation_configuration") or {}
+        configuration_rows = [
+            [key.replace("_", " ").title(), value]
+            for key, value in generation.items()
+        ]
+        if evidence_metrics.get("seeds"):
+            configuration_rows.append(["Seeds", _display(evidence_metrics["seeds"])])
+        configuration_rows.append(
+            [
+                "Evaluation embedding model",
+                _display(evidence_metrics.get("evaluation_embedding_model")),
+            ]
+        )
+        scope_table = {
+            "headers": ["Execution setting", "Applied value"],
+            "rows": configuration_rows,
         }
 
     for key, value in evidence_metrics.items():
@@ -1096,9 +1191,27 @@ def build_report_model(
     runtime_context=None,
 ) -> dict:
     resource_summary = build_resource_summary(audit_context, resource_context)
+    is_local_surrogate = bool((resource_context or {}).get("is_local_surrogate"))
     return {
+        "validation_notice": (
+            {
+                "title": "Local surrogate execution validation",
+                "text": (
+                    "The original LegalMind model weights were unavailable. "
+                    "DistilGPT2 was used as a locally executable surrogate to "
+                    "validate the mechanics of the LLM evidence pathway. The "
+                    "resulting scores are not an audit of the original LegalMind model."
+                ),
+            }
+            if is_local_surrogate
+            else None
+        ),
         "executive_summary": build_executive_summary(
-            results, audit_context, governance_context, provider_name
+            results,
+            audit_context,
+            governance_context,
+            provider_name,
+            resource_context,
         ),
         "audit_scope": build_audit_scope(
             audit_context, governance_context, resource_context

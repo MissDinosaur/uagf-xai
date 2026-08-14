@@ -316,6 +316,64 @@ def test_text_reports_include_text_specific_contract_metadata(
     assert ">742<" in resources
 
 
+def test_talentsift_report_uses_text_drift_and_ngram_semantics(
+    tmp_path,
+    monkeypatch,
+    traditional_audit_context,
+    governance_context,
+    unified_result_factory,
+):
+    output = _output_to(tmp_path, monkeypatch)
+    traditional_audit_context.modality = "text"
+    traditional_audit_context.feature_columns = ["cv_text"]
+    shap = unified_result_factory(
+        metrics={
+            "feature_semantics": "tokens_and_ngrams",
+            "top_features": ["with years"],
+            "feature_importance": [
+                {"feature": "with years", "importance": 0.041466}
+            ],
+        }
+    )
+    drift = unified_result_factory(
+        evidence_id="DRIFT-EVIDENTLY",
+        layer="drift",
+        method="Evidently + Feature Drift Tests",
+        metrics={
+            "dataset_drift_detected": True,
+            "drift_share": 0.75,
+            "drifted_feature_count": 3,
+            "features_analyzed": 4,
+            "model_feature_columns": ["cv_text"],
+        },
+    )
+
+    report_generator.generate_report(
+        {
+            "explainability": shap,
+            "drift": drift,
+            "_cbep_trace": _trace(["shap", "drift"]),
+        },
+        "high",
+        provider_name="TalentSift GmbH",
+        audit_context=traditional_audit_context,
+        governance_context=governance_context,
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    expected = (
+        "Canonical text-input drift was detected for the authoritative cv_text "
+        "model input: three of four derived statistical characteristics were "
+        "flagged as drifted, producing a drift share of 0.75."
+    )
+    assert expected in html
+    assert "Canonical model-input drift was detected across 4" not in html
+    assert "Feature Semantics</span><span class=\"fact-value\">" in html
+    assert "tokens_and_ngrams" in html
+    assert "<th>Token / n-gram</th>" in html
+
+
 def test_llm_report_uses_professor_defined_method_names(tmp_path, monkeypatch, governance_context):
     output = _output_to(tmp_path, monkeypatch)
     audit_context = AuditContext(
@@ -402,6 +460,59 @@ def test_llm_metadata_only_report_uses_explicit_resource_badge(
     assert "<th>Target column</th><td>Not applicable</td>" in audit_scope
     assert "<th>Positive label</th><td>Not applicable</td>" in audit_scope
     assert html.count("status-skipped") >= 4
+
+
+def test_local_surrogate_report_separates_generator_and_embedding_model(
+    tmp_path, monkeypatch, governance_context
+):
+    output = _output_to(tmp_path, monkeypatch)
+    audit_context = AuditContext(
+        system_type="llm",
+        modality="text",
+        task_type="llm_generation",
+        risk_tier="high",
+        provider_name="Local Surrogate",
+        model_type="distilgpt2_local_surrogate",
+    )
+
+    report_generator.generate_report(
+        {"_cbep_trace": _trace([])},
+        "high",
+        audit_context=audit_context,
+        governance_context=governance_context,
+        resource_context={
+            "model_status": "loaded",
+            "model_is_loadable": True,
+            "model_container": "LocalCausalLMArtifact",
+            "is_local_surrogate": True,
+            "runtime_mode": "local",
+            "evaluation_embedding_model_name": (
+                "sentence-transformers/all-MiniLM-L6-v2"
+            ),
+            "evaluation_embedding_metadata": {
+                "resolved_path": "data/embedding/all-MiniLM-L6-v2",
+                "pooling": "attention_mask_mean_pooling",
+                "normalization": "l2",
+                "local_files_only": True,
+            },
+        },
+        generate_pdf=False,
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "Local surrogate execution validation" in html
+    assert "resulting scores are not an audit of the original LegalMind model" in html
+    assert "Audited/surrogate generation model" in html
+    assert "DistilGPT2" in html
+    assert "Evaluation embedding model" in html
+    assert "sentence-transformers/all-MiniLM-L6-v2" in html
+    assert "local high-risk justice-domain validation context" in html
+    assert "Audit-context risk tier" in html
+    assert "S5 risk tier" not in html
+    assert "Validation context origin" not in html
+    assert "Governance scenario" not in html
+    assert "reused_legalmind_validation_scenario" not in html
+    assert "s6_local_execution_fallback" not in html
 
 
 def test_legacy_traditional_text_report_keeps_target_drop_fallback(

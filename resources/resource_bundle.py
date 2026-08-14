@@ -47,6 +47,8 @@ class ResourceBundle:
 
     embedding_model: Any | None = None
 
+    evaluation_embedding_metadata: dict[str, Any] = field(default_factory=dict)
+
     prompt_template: str | None = None
 
     golden_dataset: Any | None = None
@@ -56,3 +58,9 @@ class ResourceBundle:
     rag_manifest: Any | None = None
 
     guardrail_config: Any | None = None
+
+    semantic_drift_dataset: Any | None = None
+
+    fairness_prompt_pairs: Any | None = None
+
+    llm_evidence_config: Any | None = None

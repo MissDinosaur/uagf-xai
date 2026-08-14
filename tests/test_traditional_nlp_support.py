@@ -225,7 +225,7 @@ def test_text_shap_reports_fitted_vocabulary_tokens(
 
     assert result["status"] == "completed"
     assert result["explainer"] == "LinearExplainer"
-    assert result["feature_semantics"] == "tokens"
+    assert result["feature_semantics"] == "tokens_and_ngrams"
     assert result["global_token_importance"]
     assert not result["top_features"][0].startswith("feature_")
     assert output_path.exists()

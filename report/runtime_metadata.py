@@ -227,8 +227,12 @@ def collect_input_provenance(
     audit_context,
     governance_context,
     project_root: str | Path = PROJECT_ROOT,
+    runtime_context=None,
 ) -> dict[str, dict[str, Any]]:
     """Hash S4/S5 inputs and every resource referenced by the active contract."""
+    runtime_context = runtime_context or {}
+    runtime_mode = runtime_context.get("runtime_mode", "s5")
+    evidence_config = runtime_context.get("llm_evidence_config")
     is_llm = str(getattr(audit_context, "system_type", "") or "").lower() in {
         "llm",
         "agentic",
@@ -237,13 +241,18 @@ def collect_input_provenance(
         "s4_json": hash_resource(
             getattr(governance_context, "source_json_path", None), project_root
         ),
-        "s5_json": hash_resource(
-            getattr(audit_context, "source_json_path", None), project_root
-        ),
         "model_artifact": hash_resource(
             getattr(audit_context, "model_artifact_uri", None), project_root
         ),
     }
+    if runtime_mode == "local":
+        records["local_validation_context"] = hash_resource(
+            runtime_context.get("local_validation_config_path"), project_root
+        )
+    else:
+        records["s5_json"] = hash_resource(
+            getattr(audit_context, "source_json_path", None), project_root
+        )
     traditional_fields = {
         "training_dataset": "training_dataset_uri",
         "evaluation_dataset": "evaluation_dataset_uri",
@@ -264,6 +273,18 @@ def collect_input_provenance(
         records[label] = (
             hash_resource(getattr(audit_context, field_name, None), project_root)
             if is_llm
+            else _not_applicable_resource()
+        )
+    s6_llm_fields = {
+        "evaluation_embedding_model": "evaluation_embedding_model_uri",
+        "semantic_drift_validation": "semantic_drift_dataset_uri",
+        "fairness_prompt_pairs": "fairness_prompt_pairs_uri",
+    }
+    for label, field_name in s6_llm_fields.items():
+        value = getattr(evidence_config, field_name, None)
+        records[label] = (
+            hash_resource(value, project_root)
+            if is_llm and evidence_config is not None
             else _not_applicable_resource()
         )
     return records
@@ -296,7 +317,10 @@ def collect_reproducibility_metadata(
         "dependencies": collect_dependency_versions(),
         "project_state": project_state,
         "input_provenance": collect_input_provenance(
-            audit_context, governance_context, project_root
+            audit_context,
+            governance_context,
+            project_root,
+            runtime_context,
         ),
     }
     return {

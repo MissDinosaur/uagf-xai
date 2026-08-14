@@ -173,7 +173,7 @@ def _run_text_shap(model, X_raw, shap, plt, output_path):
         "status": "completed",
         "explainer": "LinearExplainer",
         "input_representation": "tfidf_sparse",
-        "feature_semantics": "tokens",
+        "feature_semantics": "tokens_and_ngrams",
         "global_token_importance": global_importance,
         "local_token_attributions": local_attributions,
         "top_positive_tokens": top_positive,

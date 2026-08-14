@@ -113,8 +113,33 @@ class DatasetLoader:
         return DatasetLoader._load_structured_resource(uri, "guardrail config")
 
     @staticmethod
+    def load_semantic_drift_dataset(evidence_config):
+        uri = (
+            evidence_config.semantic_drift_dataset_uri
+            if evidence_config is not None
+            else None
+        )
+        if not uri:
+            return None
+        return DatasetLoader._load_structured_resource(
+            uri, "controlled semantic-drift validation dataset"
+        )
+
+    @staticmethod
+    def load_fairness_prompt_pairs(evidence_config):
+        uri = (
+            evidence_config.fairness_prompt_pairs_uri
+            if evidence_config is not None
+            else None
+        )
+        if not uri:
+            return None
+        return DatasetLoader._load_structured_resource(
+            uri, "matched fairness prompt pairs"
+        )
+
+    @staticmethod
     def load_traditional(audit_context):
         train = DatasetLoader.load_training(audit_context)
         eval_ = DatasetLoader.load_evaluation(audit_context)
         return train, eval_
-

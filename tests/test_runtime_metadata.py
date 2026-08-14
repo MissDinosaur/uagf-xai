@@ -169,6 +169,48 @@ def test_legalmind_directory_and_golden_set_hashes_are_available():
     assert len(provenance["golden_set"]["sha256"]) == 64
 
 
+def test_local_provenance_uses_local_context_label_not_s5(tmp_path):
+    local_config = tmp_path / "s6_local_config.json"
+    local_config.write_text("{}", encoding="utf-8")
+    model = tmp_path / "model"
+    model.mkdir()
+    embedding = tmp_path / "embedding"
+    embedding.mkdir()
+    drift = tmp_path / "drift.json"
+    drift.write_text("{}", encoding="utf-8")
+    fairness = tmp_path / "fairness.json"
+    fairness.write_text("{}", encoding="utf-8")
+    audit_context = SimpleNamespace(
+        system_type="llm",
+        model_artifact_uri=str(model),
+        golden_set_uri=None,
+        system_prompt_uri=None,
+        rag_manifest_uri=None,
+        guardrail_config_uri=None,
+    )
+    evidence_config = SimpleNamespace(
+        evaluation_embedding_model_uri=str(embedding),
+        semantic_drift_dataset_uri=str(drift),
+        fairness_prompt_pairs_uri=str(fairness),
+    )
+
+    provenance = collect_input_provenance(
+        audit_context,
+        None,
+        project_root=tmp_path,
+        runtime_context={
+            "runtime_mode": "local",
+            "local_validation_config_path": str(local_config),
+            "llm_evidence_config": evidence_config,
+        },
+    )
+
+    assert "local_validation_context" in provenance
+    assert provenance["local_validation_context"]["status"] == "available"
+    assert "s5_json" not in provenance
+    assert provenance["evaluation_embedding_model"]["status"] == "available"
+
+
 def test_reproducibility_record_is_stable_when_dynamic_fields_are_fixed(tmp_path):
     audit_context = SimpleNamespace(system_type="traditional_ml")
     fixed = {

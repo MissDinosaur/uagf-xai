@@ -401,17 +401,36 @@ def _normalize_llm(token: str, raw: dict) -> dict:
             ],
         )
 
+    if status == "failed":
+        reason = str(raw.get("reason") or "LLM evidence execution failed.")
+        return failed_evidence(
+            **_base_payload(token, raw),
+            summary=f"{catalog['method']} failed during execution: {reason}",
+            key_findings=[],
+            metrics={"error_type": raw.get("error_type")},
+            limitations=[reason],
+        )
+
     metrics = {
         key: deepcopy(value)
         for key, value in raw.items()
-        if key not in {"type", "method", "status", "reason"}
+        if key not in {
+            "type",
+            "method",
+            "status",
+            "reason",
+            "summary",
+            "key_findings",
+            "limitations",
+        }
     }
     return completed_evidence(
         **_base_payload(token, raw),
-        summary=f"{catalog['method']} completed and produced structured LLM evidence.",
-        key_findings=[],
+        summary=raw.get("summary")
+        or f"{catalog['method']} completed and produced structured LLM evidence.",
+        key_findings=list(raw.get("key_findings") or []),
         metrics=metrics,
-        limitations=[],
+        limitations=list(raw.get("limitations") or []),
     )
 
 

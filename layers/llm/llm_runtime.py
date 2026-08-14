@@ -8,6 +8,9 @@ artifact is metadata-only and cannot be executed locally.
 from __future__ import annotations
 
 from typing import Any
+import re
+
+import numpy as np
 
 
 DEFAULT_SKIP_REASON = (
@@ -106,3 +109,78 @@ def build_llm_skip_result(
             "loaded_metadata_files": artifact_status["loaded_metadata_files"],
         },
     }
+
+
+def evaluation_embedding_model(resource_context=None):
+    context = _as_dict(resource_context)
+    model = context.get("evaluation_embedding_model")
+    if model is None or not hasattr(model, "encode"):
+        raise ValueError(
+            "Execution-level LLM evidence requires a loaded S6 evaluation "
+            "embedding model with an encode() interface."
+        )
+    return model
+
+
+def generation_record(generator, prompt: str, **configuration) -> dict[str, Any]:
+    """Generate one continuation and expose the shared audit contract."""
+    if hasattr(generator, "generate_response_with_metadata"):
+        record = dict(
+            generator.generate_response_with_metadata(prompt, **configuration)
+        )
+    elif hasattr(generator, "generate_response"):
+        record = {
+            "text": generator.generate_response(prompt, **configuration),
+            "continuation_only": True,
+            "input_token_count": None,
+            "generated_token_count": None,
+            **configuration,
+        }
+    else:
+        outputs = generator(
+            prompt,
+            num_return_sequences=1,
+            return_full_text=False,
+            **configuration,
+        )
+        if not outputs or "generated_text" not in outputs[0]:
+            raise RuntimeError("The generation pipeline returned no generated_text.")
+        record = {
+            "text": outputs[0]["generated_text"],
+            "continuation_only": True,
+            "input_token_count": None,
+            "generated_token_count": None,
+            **configuration,
+        }
+    text = str(record.get("text") or "").strip()
+    if not text:
+        raise RuntimeError("The local generation model returned empty generated text.")
+    if record.get("continuation_only") is not True:
+        raise RuntimeError("The generation boundary did not guarantee continuation-only text.")
+    record["text"] = text
+    for key in ("max_new_tokens", "do_sample", "seed", "temperature", "top_p"):
+        record.setdefault(key, configuration.get(key))
+    return record
+
+
+def generation_text(generator, prompt: str, **configuration) -> str:
+    """Generate plain continuation text through the shared audit contract."""
+    return generation_record(generator, prompt, **configuration)["text"]
+
+
+def lexical_echo_ratio(generated: str, source: str) -> float:
+    """Return the share of generated lexical tokens also present in the source."""
+    generated_tokens = re.findall(r"\b[\w'-]+\b", generated.lower())
+    source_tokens = set(re.findall(r"\b[\w'-]+\b", source.lower()))
+    if not generated_tokens:
+        return 0.0
+    return sum(token in source_tokens for token in generated_tokens) / len(generated_tokens)
+
+
+def cosine_similarity(left, right) -> float:
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+    if denominator == 0.0:
+        return 0.0
+    return float(np.clip(np.dot(left, right) / denominator, -1.0, 1.0))

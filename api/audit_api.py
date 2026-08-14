@@ -104,8 +104,11 @@ def _build_evaluation_views(
     )
 
 
-def _load_s5_resources(audit_context):
-    resources = ResourceLoader.load_bundle(audit_context)
+def _load_s5_resources(audit_context, llm_evidence_config=None):
+    if llm_evidence_config is None:
+        resources = ResourceLoader.load_bundle(audit_context)
+    else:
+        resources = ResourceLoader.load_bundle(audit_context, llm_evidence_config)
 
     if _is_llm_contract(audit_context):
         golden_set = resources.golden_dataset
@@ -139,9 +142,10 @@ def _load_s5_resources(audit_context):
     return resources, views
 
 
-def _build_resource_context(audit_context, resource_bundle):
+def _build_resource_context(audit_context, resource_bundle, runtime_mode="s5"):
     model = getattr(resource_bundle, "model", None)
     model_metadata = getattr(resource_bundle, "model_metadata", {}) or {}
+    evidence_config = getattr(resource_bundle, "llm_evidence_config", None)
 
     model_class = type(model).__name__ if model is not None else None
     if getattr(model, "status", None) == "metadata_only":
@@ -166,6 +170,23 @@ def _build_resource_context(audit_context, resource_bundle):
         "system_prompt": getattr(resource_bundle, "system_prompt", None),
         "rag_manifest": getattr(resource_bundle, "rag_manifest", None),
         "guardrail_config": getattr(resource_bundle, "guardrail_config", None),
+        "evaluation_embedding_model": getattr(
+            resource_bundle, "embedding_model", None
+        ),
+        "evaluation_embedding_metadata": getattr(
+            resource_bundle, "evaluation_embedding_metadata", {}
+        ),
+        "semantic_drift_dataset": getattr(
+            resource_bundle, "semantic_drift_dataset", None
+        ),
+        "fairness_prompt_pairs": getattr(
+            resource_bundle, "fairness_prompt_pairs", None
+        ),
+        "runtime_mode": runtime_mode,
+        "is_local_surrogate": runtime_mode == "local",
+        "evaluation_embedding_model_name": getattr(
+            evidence_config, "evaluation_embedding_model", None
+        ),
         "model_metadata": model_metadata,
         "feature_columns": getattr(audit_context, "feature_columns", None),
         "model_feature_columns": getattr(resource_bundle, "model_feature_columns", None),
@@ -276,6 +297,8 @@ def audit_with_detailed_data(
     feature_scope_source=None,
     generate_pdf=True,
     run_started_at=None,
+    runtime_mode="s5",
+    local_validation_config_path=None,
 ):
     """
     Run the evidence pipeline against explicitly supplied model/data inputs.
@@ -289,6 +312,7 @@ def audit_with_detailed_data(
         resource_context = _build_resource_context(
             audit_context,
             resource_bundle,
+            runtime_mode,
         )
     drift_reference_data = (
         getattr(resource_bundle, "training_dataset", None)
@@ -350,6 +374,11 @@ def audit_with_detailed_data(
         generate_pdf=generate_pdf,
         runtime_context={
             "total_runtime_seconds": round(total_runtime_seconds, 6),
+            "runtime_mode": runtime_mode,
+            "local_validation_config_path": local_validation_config_path,
+            "llm_evidence_config": getattr(
+                resource_bundle, "llm_evidence_config", None
+            ),
             "measurement_scope": (
                 "Resource loading, CBEP planning, evidence execution, and evidence "
                 "normalization; report rendering and PDF export are excluded."
@@ -360,16 +389,28 @@ def audit_with_detailed_data(
     return results
 
 
-def audit(audit_context, governance_context=None, generate_pdf=True):
+def audit(
+    audit_context,
+    governance_context=None,
+    generate_pdf=True,
+    *,
+    runtime_mode="s5",
+    llm_evidence_config=None,
+    local_validation_config_path=None,
+):
     """
-    Run the S5-driven workflow.
+    Run an S5 contract or an explicitly configured S6 local validation case.
 
-    This path requires real S5-provided resources. If the model artifact or
-    datasets are unavailable, the failure is surfaced directly to the caller.
+    Resource failures are surfaced directly; no synthetic inference fallback is used.
     """
     run_started_at = time.perf_counter()
-    resource_bundle, payload = _load_s5_resources(audit_context)
-    print("Mode: real S5 resources")
+    resource_bundle, payload = _load_s5_resources(
+        audit_context, llm_evidence_config
+    )
+    if runtime_mode == "local":
+        print("Mode: S6 local execution fallback")
+    else:
+        print("Mode: real S5 resources")
 
     if _is_llm_contract(audit_context):
         X = payload
@@ -396,4 +437,6 @@ def audit(audit_context, governance_context=None, generate_pdf=True):
         feature_scope_source=views.feature_scope_source if views else None,
         generate_pdf=generate_pdf,
         run_started_at=run_started_at,
+        runtime_mode=runtime_mode,
+        local_validation_config_path=local_validation_config_path,
     )

@@ -7,6 +7,7 @@ from __future__ import annotations
 from .model_loader import ModelLoader
 from .dataset_loader import DatasetLoader
 from .resource_bundle import ResourceBundle
+from .llm_evaluation_loader import LLMEvaluationModelLoader
 
 
 class ResourceLoader:
@@ -36,24 +37,34 @@ class ResourceLoader:
         return DatasetLoader.load_traditional(audit_context)
 
     @staticmethod
-    def load_llm_resources(audit_context):
+    def load_llm_resources(audit_context, llm_evidence_config=None):
         return {
             "golden_set": DatasetLoader.load_golden_set(audit_context),
             "system_prompt": DatasetLoader.load_system_prompt(audit_context),
             "rag_manifest": DatasetLoader.load_rag_manifest(audit_context),
             "guardrail_config": DatasetLoader.load_guardrail_config(audit_context),
+            "semantic_drift_dataset": (
+                DatasetLoader.load_semantic_drift_dataset(llm_evidence_config)
+            ),
+            "fairness_prompt_pairs": (
+                DatasetLoader.load_fairness_prompt_pairs(llm_evidence_config)
+            ),
         }
 
     @staticmethod
-    def load_bundle(audit_context) -> ResourceBundle:
+    def load_bundle(audit_context, llm_evidence_config=None) -> ResourceBundle:
         if ResourceLoader._is_llm_contract(audit_context):
             print("[ResourceLoader] LLM golden-set resource contract detected.")
         else:
             print("[ResourceLoader] Traditional ML resource contract detected.")
 
         model = ResourceLoader.load_model(audit_context)
-        tokenizer = ResourceLoader.load_tokenizer(audit_context)
+        tokenizer = getattr(model, "tokenizer", None)
+        if tokenizer is None:
+            tokenizer = ResourceLoader.load_tokenizer(audit_context)
         model_metadata = ResourceLoader.load_model_metadata(audit_context)
+        if hasattr(model, "metadata") and isinstance(model.metadata, dict):
+            model_metadata.update(model.metadata)
         model_feature_columns = getattr(model, "model_feature_columns", None)
         if model_feature_columns is None:
             fitted_names = getattr(model, "feature_names_in_", None)
@@ -72,7 +83,10 @@ class ResourceLoader:
                 model_metadata[key] = value
 
         if ResourceLoader._is_llm_contract(audit_context):
-            llm_resources = ResourceLoader.load_llm_resources(audit_context)
+            llm_resources = ResourceLoader.load_llm_resources(
+                audit_context, llm_evidence_config
+            )
+            embedding_model = LLMEvaluationModelLoader.load(llm_evidence_config)
             return ResourceBundle(
                 model=model,
                 model_metadata=model_metadata,
@@ -81,10 +95,17 @@ class ResourceLoader:
                     "model_artifact_feature_cols" if model_feature_columns else None
                 ),
                 tokenizer=tokenizer,
+                embedding_model=embedding_model,
+                evaluation_embedding_metadata=(
+                    embedding_model.metadata if embedding_model else {}
+                ),
                 golden_dataset=llm_resources["golden_set"],
                 system_prompt=llm_resources["system_prompt"],
                 rag_manifest=llm_resources["rag_manifest"],
                 guardrail_config=llm_resources["guardrail_config"],
+                semantic_drift_dataset=llm_resources["semantic_drift_dataset"],
+                fairness_prompt_pairs=llm_resources["fairness_prompt_pairs"],
+                llm_evidence_config=llm_evidence_config,
             )
 
         train_df, eval_df = ResourceLoader.load_traditional_resources(audit_context)

@@ -60,7 +60,7 @@ from schema.evidence_schema import EVIDENCE_STATUSES, completed_evidence
         ),
     ],
 )
-def test_legacy_runner_outputs_are_normalized_and_preserved(result_key, raw):
+def test_raw_runner_outputs_are_normalized_and_preserved(result_key, raw):
     result = normalize_evidence_results({result_key: raw})[result_key]
 
     assert REQUIRED_FIELDS <= set(result)
@@ -111,7 +111,7 @@ def test_existing_unified_evidence_is_preserved():
     assert result["explainability"] == unified
 
 
-def test_legacy_drift_normalization_preserves_canonical_detection_fields():
+def test_drift_normalization_preserves_canonical_detection_fields():
     raw = {
         "method": "Evidently",
         "canonical_source": "evidently",

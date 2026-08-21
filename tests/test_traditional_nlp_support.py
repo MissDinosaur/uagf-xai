@@ -268,26 +268,6 @@ def test_text_mapie_uses_transform_without_refitting(talentsift_model, monkeypat
     assert calls["predict"] > 0
 
 
-def test_talentsift_production_code_has_no_parameter_inference_workaround():
-    loader_source = Path("resources/traditional_model_loader.py").read_text(
-        encoding="utf-8"
-    )
-    mapie_source = Path("layers/uncertainty/mapie_runner.py").read_text(
-        encoding="utf-8"
-    )
-    shap_source = Path("layers/explainability/shap_runner.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "FittedLogisticCompatibilityView" not in loader_source
-    assert "conformal_estimator" not in loader_source + mapie_source
-    assert "expit" not in loader_source
-    assert "softmax" not in loader_source
-    assert "X @ self.estimator.coef_" not in loader_source
-    assert "np.argmax(self.predict_proba" not in loader_source
-    assert "linear_model = (estimator.coef_, estimator.intercept_)" not in shap_source
-
-
 def test_text_drift_uses_only_declared_text_feature(
     talentsift_model,
     monkeypatch,

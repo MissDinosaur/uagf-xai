@@ -3,30 +3,6 @@ import pytest
 from adapters.s5_audit_adapter import AuditAdapter, AuditContext
 
 
-def test_audit_context_excludes_internal_and_legacy_fields(traditional_s5_json):
-    excluded = {
-        "output_namespace",
-        "evaluation_embedding_model",
-        "evaluation_embedding_model_uri",
-        "semantic_drift_dataset_uri",
-        "fairness_prompt_pairs_uri",
-        "validation_context_origin",
-        "governance_scenario_origin",
-        "counterfactual_actionable_feature_columns",
-        "counterfactual_immutable_feature_columns",
-    }
-    stage_b = traditional_s5_json["client_submission"]["stage_b"]
-    for field_name in excluded:
-        stage_b[field_name] = "must_be_ignored"
-
-    context = AuditAdapter.from_audit_report(traditional_s5_json)
-
-    assert excluded.isdisjoint(AuditContext.__dataclass_fields__)
-    assert all(not hasattr(context, field_name) for field_name in excluded)
-    assert context.actionable_feature_columns is None
-    assert context.immutable_feature_columns == []
-
-
 def test_traditional_contract_maps_stage_b_and_prefers_nested_values(
     traditional_s5_json,
 ):

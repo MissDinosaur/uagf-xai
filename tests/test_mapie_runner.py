@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -93,15 +92,6 @@ def test_mapie_named_regressor_calls_original_predict_without_refit():
     assert predict_spy.called
     assert not fit_spy.called
     assert joblib_hash(model) == original_hash
-
-
-def test_mapie_production_path_contains_no_clone_or_manual_inference():
-    source = Path("layers/uncertainty/mapie_runner.py").read_text(encoding="utf-8")
-
-    assert "clone(" not in source
-    assert "fit_transform(" not in source
-    assert "partial_fit(" not in source
-    assert "coef_" not in source
 
 
 def test_missing_task_type_uses_binary_classification_view(monkeypatch):

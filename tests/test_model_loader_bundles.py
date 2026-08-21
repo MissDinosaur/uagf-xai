@@ -46,7 +46,7 @@ def test_sklearn_bundle_is_wrapped_and_predicts_raw_data(encoded_bundle):
     assert encoded_bundle.estimator is encoded_bundle.model
 
 
-def test_model_loader_facade_preserves_legacy_wrapper_exports():
+def test_model_loader_facade_reexports_public_wrapper_types():
     assert FacadeEncodedSklearnModel is EncodedSklearnModel
     assert FacadeMetadataOnlyLLMArtifact is MetadataOnlyLLMArtifact
 

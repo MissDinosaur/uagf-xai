@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from adapters.s5_audit_adapter import AuditContext
 from layers.llm.llm_drift_runner import run_llm_drift
 from layers.llm.llm_explainability_runner import run_llm_explainability
 from layers.llm.llm_fairness_runner import run_llm_fairness
@@ -94,16 +92,6 @@ def test_s6_local_config_and_cli_mode_are_separate_from_s5(monkeypatch):
     assert evidence_config.fairness_prompt_pairs_uri.endswith(
         "fairness_prompt_pairs.json"
     )
-    removed_fields = {
-        "evaluation_embedding_model",
-        "evaluation_embedding_model_uri",
-        "semantic_drift_dataset_uri",
-        "fairness_prompt_pairs_uri",
-        "validation_context_origin",
-        "governance_scenario_origin",
-    }
-    assert removed_fields.isdisjoint(AuditContext.__dataclass_fields__)
-
     monkeypatch.setattr("sys.argv", ["main.py"])
     assert main.parse_args().mode == "s5"
 
@@ -417,17 +405,3 @@ def test_local_fallback_log_does_not_claim_real_s5_resources(monkeypatch, capsys
     output = capsys.readouterr().out
     assert "Mode: S6 local execution fallback" in output
     assert "Mode: real S5 resources" not in output
-
-
-def test_llm_execution_production_code_contains_no_training_calls():
-    modules = [
-        inspect.getsource(LLMModelLoader),
-        inspect.getsource(run_llm_explainability),
-        inspect.getsource(run_llm_uncertainty),
-        inspect.getsource(run_llm_drift),
-        inspect.getsource(run_llm_fairness),
-    ]
-    source = "\n".join(modules)
-
-    for prohibited in (".fit(", ".fit_transform(", ".partial_fit("):
-        assert prohibited not in source

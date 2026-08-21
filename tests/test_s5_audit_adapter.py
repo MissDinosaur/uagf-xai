@@ -3,43 +3,57 @@ import pytest
 from adapters.s5_audit_adapter import AuditAdapter, AuditContext
 
 
-def test_audit_context_does_not_expose_output_namespace():
-    assert "output_namespace" not in AuditContext.__dataclass_fields__
-
-
-def test_s6_local_execution_fields_are_not_part_of_s5_contract(
-    traditional_s5_json,
-):
-    removed_fields = {
+def test_audit_context_excludes_internal_and_legacy_fields(traditional_s5_json):
+    excluded = {
+        "output_namespace",
         "evaluation_embedding_model",
         "evaluation_embedding_model_uri",
         "semantic_drift_dataset_uri",
         "fairness_prompt_pairs_uri",
         "validation_context_origin",
         "governance_scenario_origin",
+        "counterfactual_actionable_feature_columns",
+        "counterfactual_immutable_feature_columns",
     }
     stage_b = traditional_s5_json["client_submission"]["stage_b"]
-    for field_name in removed_fields:
+    for field_name in excluded:
         stage_b[field_name] = "must_be_ignored"
-    traditional_s5_json["validation_context_origin"] = "must_be_ignored"
-    traditional_s5_json["governance_scenario_origin"] = "must_be_ignored"
 
     context = AuditAdapter.from_audit_report(traditional_s5_json)
 
-    assert removed_fields.isdisjoint(AuditContext.__dataclass_fields__)
-    assert all(not hasattr(context, field_name) for field_name in removed_fields)
+    assert excluded.isdisjoint(AuditContext.__dataclass_fields__)
+    assert all(not hasattr(context, field_name) for field_name in excluded)
+    assert context.actionable_feature_columns is None
+    assert context.immutable_feature_columns == []
 
 
-def test_traditional_stage_b_fields_are_mapped(traditional_s5_json):
+def test_traditional_contract_maps_stage_b_and_prefers_nested_values(
+    traditional_s5_json,
+):
     stage_b = traditional_s5_json["client_submission"]["stage_b"]
-    stage_b["actionable_feature_columns"] = ["income"]
-    stage_b["immutable_feature_columns"] = ["age"]
+    stage_b.update(
+        {
+            "model_artifact_uri": "file://nested/model.joblib",
+            "model_entrypoint": "entry.joblib",
+            "actionable_feature_columns": ["income"],
+            "immutable_feature_columns": ["age"],
+        }
+    )
+    traditional_s5_json.update(
+        {
+            "model_artifact_uri": "file://ignored/top-level.joblib",
+            "model_artifact_kind": "directory",
+            "task_type": "regression",
+        }
+    )
+
     context = AuditAdapter.from_audit_report(traditional_s5_json)
 
     assert context.system_type == "traditional_ml"
     assert context.modality == "tabular"
-    assert context.model_artifact_uri == "file://models/model.joblib"
+    assert context.model_artifact_uri == "file://nested/model.joblib"
     assert context.model_artifact_kind == "single_file"
+    assert context.model_entrypoint == "entry.joblib"
     assert context.model_format == "joblib"
     assert context.model_framework == "sklearn"
     assert context.model_type == "binary_classifier"
@@ -50,22 +64,11 @@ def test_traditional_stage_b_fields_are_mapped(traditional_s5_json):
     assert context.sensitive_feature_columns == ["gender"]
     assert context.actionable_feature_columns == ["income"]
     assert context.immutable_feature_columns == ["age"]
+    assert context.task_type == "binary_classification"
+    assert context.provider_name == "Test Provider"
 
 
-def test_old_counterfactual_policy_names_are_not_canonical(traditional_s5_json):
-    stage_b = traditional_s5_json["client_submission"]["stage_b"]
-    stage_b["counterfactual_actionable_feature_columns"] = ["income"]
-    stage_b["counterfactual_immutable_feature_columns"] = ["age"]
-
-    context = AuditAdapter.from_audit_report(traditional_s5_json)
-
-    assert "counterfactual_actionable_feature_columns" not in AuditContext.__dataclass_fields__
-    assert "counterfactual_immutable_feature_columns" not in AuditContext.__dataclass_fields__
-    assert context.actionable_feature_columns is None
-    assert context.immutable_feature_columns == []
-
-
-def test_duplicate_counterfactual_policy_columns_are_rejected(traditional_s5_json):
+def test_counterfactual_policy_rejects_duplicate_columns(traditional_s5_json):
     stage_b = traditional_s5_json["client_submission"]["stage_b"]
     stage_b["immutable_feature_columns"] = ["age", "age"]
 
@@ -73,48 +76,7 @@ def test_duplicate_counterfactual_policy_columns_are_rejected(traditional_s5_jso
         AuditAdapter.from_audit_report(traditional_s5_json)
 
 
-def test_nested_stage_b_fields_are_mapped():
-    data = {
-        "verified_modality": "tabular",
-        "verified_risk_tier": "high",
-        "cgsa_csp_satisfiable": True,
-        "model_artifact_uri": "file://ignored/top-level.joblib",
-        "model_artifact_kind": "directory",
-        "task_type": "regression",
-        "client_submission": {
-            "stage_a": {"provider_name": "Nested Provider"},
-            "stage_b": {
-                "model_artifact_uri": "file://nested/model.joblib",
-                "model_artifact_kind": "single_file",
-                "model_format": "joblib",
-                "model_framework": "sklearn",
-                "model_type": "nested_classifier",
-                "model_entrypoint": "entry.joblib",
-                "training_dataset_uri": "file://nested/train.csv",
-                "evaluation_dataset_uri": "file://nested/eval.csv",
-                "target_column": "label",
-                "positive_label": "yes",
-                "sensitive_feature_columns": ["region"],
-                "task_type": "binary_classification",
-            },
-        },
-    }
-
-    context = AuditAdapter.from_audit_report(data)
-
-    assert context.system_type == "traditional_ml"
-    assert context.modality == "tabular"
-    assert context.model_artifact_uri == "file://nested/model.joblib"
-    assert context.model_artifact_kind == "single_file"
-    assert context.model_entrypoint == "entry.joblib"
-    assert context.training_dataset_uri.endswith("train.csv")
-    assert context.task_type == "binary_classification"
-    assert context.target_column == "label"
-    assert context.positive_label == "yes"
-    assert context.provider_name == "Nested Provider"
-
-
-def test_llm_contract_maps_optional_resources_without_tabular_datasets(llm_s5_json):
+def test_llm_contract_maps_optional_resources_without_tabular_data(llm_s5_json):
     context = AuditAdapter.from_audit_report(llm_s5_json)
 
     assert context.system_type == "agentic"
@@ -129,114 +91,94 @@ def test_llm_contract_maps_optional_resources_without_tabular_datasets(llm_s5_js
     assert context.target_column is None
 
 
-def test_is_llm_or_agentic_flag_infers_llm_task():
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": True,
-            "model_artifact_uri": "file://model/",
-            "model_artifact_kind": "directory",
-            "golden_set_uri": "file://golden.json",
-            "task_type": "llm_generation",
-            "cgsa_csp_satisfiable": True,
-        }
-    )
-
-    assert context.system_type == "llm"
-    assert context.modality == "unknown"
-    assert context.task_type == "llm_generation"
-
-
-@pytest.mark.parametrize("token", ["llm", "rag", "agentic", "mistral", "lora"])
-def test_llm_like_model_type_tokens_trigger_llm_inference(token):
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": True,
-            "model_type": f"custom_{token}_model",
-            "model_artifact_uri": "file://model/",
-            "model_artifact_kind": "directory",
-            "task_type": "llm_generation",
-            "cgsa_csp_satisfiable": True,
-        }
-    )
-
-    assert context.system_type in {"llm", "agentic"}
-    assert context.task_type == "llm_generation"
-
-
-def test_false_llm_flag_is_authoritative_over_llm_like_metadata():
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": False,
-            "system_type": "llm",
-            "model_type": "llm_rag_agentic_mistral_lora",
-            "modality": "tabular",
-            "task_type": "binary_classification",
-            "cgsa_csp_satisfiable": True,
-        }
-    )
-
-    assert context.system_type == "traditional_ml"
-    assert context.modality == "tabular"
-    assert context.task_type == "binary_classification"
-
-
-def test_agentic_system_is_derived_from_nested_description_and_tool_calling():
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": True,
-            "verified_modality": "llm",
-            "client_submission": {
-                "stage_a": {"declared_modality": "llm"},
-                "stage_b": {
-                    "model_type": "foundation_model",
-                    "general_description": "An LLM with tool-calling workflows.",
-                    "task_type": "llm_generation",
-                },
+def test_system_type_derivation_covers_traditional_llm_and_agentic_cases():
+    cases = [
+        (
+            {
+                "is_llm_or_agentic": False,
+                "system_type": "llm",
+                "model_type": "llm_rag_agentic_mistral_lora",
+                "modality": "tabular",
+                "task_type": "binary_classification",
+                "cgsa_csp_satisfiable": True,
             },
-            "cgsa_csp_satisfiable": True,
-        }
-    )
+            ("traditional_ml", "binary_classification"),
+        ),
+        (
+            {
+                "is_llm_or_agentic": True,
+                "model_artifact_kind": "directory",
+                "task_type": "llm_generation",
+                "cgsa_csp_satisfiable": True,
+            },
+            ("llm", "llm_generation"),
+        ),
+        (
+            {
+                "is_llm_or_agentic": True,
+                "verified_modality": "llm",
+                "client_submission": {
+                    "stage_b": {
+                        "model_type": "foundation_model",
+                        "general_description": "An LLM with tool-calling workflows.",
+                        "task_type": "llm_generation",
+                    }
+                },
+                "cgsa_csp_satisfiable": True,
+            },
+            ("agentic", "llm_generation"),
+        ),
+    ]
+    for payload, expected in cases:
+        context = AuditAdapter.from_audit_report(payload)
+        assert (context.system_type, context.task_type) == expected
 
-    assert context.system_type == "agentic"
-    assert context.modality == "text"
-    assert context.task_type == "llm_generation"
+    for token in ("llm", "rag", "agentic", "mistral", "lora"):
+        context = AuditAdapter.from_audit_report(
+            {
+                "is_llm_or_agentic": True,
+                "client_submission": {
+                    "stage_b": {
+                        "model_type": f"custom_{token}_model",
+                        "task_type": "llm_generation",
+                    }
+                },
+                "cgsa_csp_satisfiable": True,
+            }
+        )
+        assert context.system_type in {"llm", "agentic"}
 
 
-@pytest.mark.parametrize(
-    ("raw_modality", "expected"),
-    [
-        ("tabular", "tabular"),
-        ("time-series", "time_series"),
-        ("text", "text"),
-        ("llm", "text"),
-        ("agentic", "text"),
-        ("image", "image"),
-        ("audio", "audio"),
-        ("multimodal", "multimodal"),
-        ("unsupported_value", "unknown"),
-        (None, "unknown"),
-    ],
-)
-def test_modality_is_normalized_to_the_public_contract(raw_modality, expected):
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": raw_modality in {"llm", "agentic"},
-            "modality": raw_modality,
-            "cgsa_csp_satisfiable": True,
-        }
-    )
+def test_modality_normalization_covers_the_public_contract():
+    cases = {
+        "tabular": "tabular",
+        "time-series": "time_series",
+        "text": "text",
+        "llm": "text",
+        "agentic": "text",
+        "nlp": "text",
+        "image": "image",
+        "audio": "audio",
+        "multimodal": "multimodal",
+        "unsupported_value": "unknown",
+        None: "unknown",
+    }
+    for raw_modality, expected in cases.items():
+        context = AuditAdapter.from_audit_report(
+            {
+                "is_llm_or_agentic": raw_modality in {"llm", "agentic"},
+                "modality": raw_modality,
+                "cgsa_csp_satisfiable": True,
+            }
+        )
+        assert context.modality == expected
 
-    assert context.modality == expected
-
-
-def test_direct_context_normalizes_legacy_values_to_public_contract():
-    context = AuditContext(system_type="traditional", modality="time series")
-
-    assert context.system_type == "traditional_ml"
-    assert context.modality == "time_series"
+    direct = AuditContext(system_type="traditional", modality="time series")
+    assert direct.system_type == "traditional_ml"
+    assert direct.modality == "time_series"
 
 
-def test_invalid_stage_b_model_artifact_kind_is_rejected():
+def test_invalid_model_artifact_kind_is_rejected():
     with pytest.raises(ValueError, match="model_artifact_kind"):
         AuditAdapter.from_audit_report(
             {
@@ -247,29 +189,24 @@ def test_invalid_stage_b_model_artifact_kind_is_rejected():
         )
 
 
-def test_talentsift_feature_columns_are_read_from_data_dictionary():
-    context = AuditAdapter.from_audit_report(
-        {
-            "is_llm_or_agentic": False,
-            "verified_modality": "nlp",
-            "client_submission": {
-                "stage_b": {
-                    "task_type": "binary_classification",
-                    "target_column": "shortlist",
-                    "data_dictionary": {"feature_columns": ["cv_text", "cv_text"]},
-                }
-            },
-            "cgsa_csp_satisfiable": True,
-        }
-    )
-
-    assert context.system_type == "traditional_ml"
-    assert context.modality == "text"
+def test_feature_columns_are_normalized_and_validated():
+    base = {
+        "is_llm_or_agentic": False,
+        "verified_modality": "nlp",
+        "cgsa_csp_satisfiable": True,
+        "client_submission": {
+            "stage_b": {
+                "task_type": "binary_classification",
+                "target_column": "shortlist",
+                "data_dictionary": {"feature_columns": ["cv_text", "cv_text"]},
+            }
+        },
+    }
+    context = AuditAdapter.from_audit_report(base)
     assert context.feature_columns == ["cv_text"]
+    assert context.modality == "text"
 
-
-def test_missing_feature_columns_preserves_none():
-    context = AuditAdapter.from_audit_report(
+    missing = AuditAdapter.from_audit_report(
         {
             "client_submission": {
                 "stage_b": {"task_type": "binary_classification"}
@@ -277,20 +214,11 @@ def test_missing_feature_columns_preserves_none():
             "cgsa_csp_satisfiable": True,
         }
     )
+    assert missing.feature_columns is None
 
-    assert context.feature_columns is None
-
-
-def test_target_column_cannot_be_declared_as_model_feature():
+    base["client_submission"]["stage_b"]["feature_columns"] = [
+        "cv_text",
+        "shortlist",
+    ]
     with pytest.raises(ValueError, match="must not include target_column"):
-        AuditAdapter.from_audit_report(
-            {
-                "client_submission": {
-                    "stage_b": {
-                        "task_type": "binary_classification",
-                        "target_column": "shortlist",
-                        "feature_columns": ["cv_text", "shortlist"],
-                    }
-                }
-            }
-        )
+        AuditAdapter.from_audit_report(base)

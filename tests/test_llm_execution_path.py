@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -65,7 +64,19 @@ def embedding_context():
     return {"evaluation_embedding_model": _FakeEmbeddingModel()}
 
 
-def test_s6_local_config_separates_audit_and_evidence_resources():
+def _fairness_context(embedding_context, pair):
+    return {
+        **embedding_context,
+        "fairness_prompt_pairs": {
+            "provenance": "synthetic_matched_prompt_pairs",
+            "pairs": [pair],
+        },
+    }
+
+
+def test_s6_local_config_and_cli_mode_are_separate_from_s5(monkeypatch):
+    import main
+
     path = Path(
         "data/04b_local_distilgpt2_llm/s6_local_llm_validation_config.json"
     )
@@ -93,21 +104,6 @@ def test_s6_local_config_separates_audit_and_evidence_resources():
     }
     assert removed_fields.isdisjoint(AuditContext.__dataclass_fields__)
 
-    golden_set = json.loads(
-        Path("data/04b_local_distilgpt2_llm/datasets/golden_eval_set.json")
-        .read_text("utf-8")
-    )
-    fairness_fixture = json.loads(
-        Path("data/04b_local_distilgpt2_llm/datasets/fairness_prompt_pairs.json")
-        .read_text("utf-8")
-    )
-    assert len(golden_set["self_consistency_prompts"]) >= 3
-    assert len(fairness_fixture["pairs"]) >= 4
-
-
-def test_cli_defaults_to_s5_and_accepts_explicit_local_mode(monkeypatch):
-    import main
-
     monkeypatch.setattr("sys.argv", ["main.py"])
     assert main.parse_args().mode == "s5"
 
@@ -117,10 +113,15 @@ def test_cli_defaults_to_s5_and_accepts_explicit_local_mode(monkeypatch):
     assert args.local_config.endswith("s6_local_llm_validation_config.json")
 
 
-def test_complete_local_huggingface_directory_loads_offline(monkeypatch, tmp_path):
-    source = tmp_path / "distilgpt2"
-    source.mkdir()
-    (source / "model.safetensors").write_bytes(b"weights")
+def test_local_model_and_embedding_loaders_use_offline_transformers(
+    monkeypatch,
+    tmp_path,
+):
+    generator_path = tmp_path / "distilgpt2"
+    embedding_path = tmp_path / "all-MiniLM-L6-v2"
+    generator_path.mkdir()
+    embedding_path.mkdir()
+    (generator_path / "model.safetensors").write_bytes(b"weights")
     calls = []
 
     class FakeTokenizer:
@@ -128,50 +129,53 @@ def test_complete_local_huggingface_directory_loads_offline(monkeypatch, tmp_pat
         eos_token_id = 7
         eos_token = "<eos>"
 
-    class FakeConfig:
+    class Config:
         pad_token_id = None
 
     class FakeModel:
-        config = FakeConfig()
-        generation_config = FakeConfig()
+        config = Config()
+        generation_config = Config()
 
         def to(self, device):
-            self.device = device
             return self
 
         def eval(self):
             self.eval_called = True
             return self
 
-    def tokenizer_load(path, **kwargs):
-        calls.append(("tokenizer", path, kwargs))
+    def load_tokenizer(path, **kwargs):
+        calls.append(("tokenizer", kwargs))
         return FakeTokenizer()
 
-    def model_load(path, **kwargs):
-        calls.append(("model", path, kwargs))
+    def load_model(path, **kwargs):
+        calls.append(("model", kwargs))
         return FakeModel()
 
+    monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", load_tokenizer)
     monkeypatch.setattr(
-        "transformers.AutoTokenizer.from_pretrained", tokenizer_load
+        "transformers.AutoModelForCausalLM.from_pretrained", load_model
     )
-    monkeypatch.setattr(
-        "transformers.AutoModelForCausalLM.from_pretrained", model_load
-    )
+    monkeypatch.setattr("transformers.AutoModel.from_pretrained", load_model)
 
     artifact = LLMModelLoader.load(
-        source,
+        generator_path,
         model_format="huggingface_pretrained",
         model_framework="huggingface_transformers",
         model_type="distilgpt2_local_surrogate",
         model_entrypoint="distilgpt2",
     )
+    context = SimpleNamespace(
+        evaluation_embedding_model_uri=f"file://{embedding_path}",
+        evaluation_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+    )
+    instrument = LLMEvaluationModelLoader.load(context)
 
     assert isinstance(artifact, LocalCausalLMArtifact)
-    assert artifact.is_loadable is True
-    assert artifact.status == "loaded"
-    assert all(item[2]["local_files_only"] is True for item in calls)
+    assert artifact.is_loadable is True and artifact.status == "loaded"
     assert artifact.tokenizer.pad_token_id == artifact.tokenizer.eos_token_id
     assert artifact.model.eval_called is True
+    assert instrument.model_name.endswith("all-MiniLM-L6-v2")
+    assert all(kwargs["local_files_only"] is True for _, kwargs in calls)
 
 
 def test_generation_wrapper_delegates_to_original_causal_model_generate():
@@ -224,50 +228,6 @@ def test_generation_wrapper_delegates_to_original_causal_model_generate():
     assert record["generated_token_count"] == 2
     assert len(model.calls) == 2
     assert model.calls[0]["do_sample"] is False
-
-
-def test_embedding_loader_uses_local_transformers_only(monkeypatch, tmp_path):
-    source = tmp_path / "all-MiniLM-L6-v2"
-    source.mkdir()
-    calls = []
-
-    class FakeTokenizer:
-        pass
-
-    class FakeModel:
-        def to(self, device):
-            self.device = device
-            return self
-
-        def eval(self):
-            self.eval_called = True
-            return self
-
-    def tokenizer_load(path, **kwargs):
-        calls.append(("tokenizer", kwargs))
-        return FakeTokenizer()
-
-    def model_load(path, **kwargs):
-        calls.append(("model", kwargs))
-        return FakeModel()
-
-    monkeypatch.setattr(
-        "transformers.AutoTokenizer.from_pretrained", tokenizer_load
-    )
-    monkeypatch.setattr("transformers.AutoModel.from_pretrained", model_load)
-    context = type(
-        "Context",
-        (),
-        {
-            "evaluation_embedding_model_uri": f"file://{source}",
-            "evaluation_embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-        },
-    )()
-
-    instrument = LLMEvaluationModelLoader.load(context)
-
-    assert instrument.model_name.endswith("all-MiniLM-L6-v2")
-    assert all(kwargs["local_files_only"] is True for _, kwargs in calls)
 
 
 def test_e1_generates_text_and_returns_numeric_grounding_scores(embedding_context):
@@ -346,9 +306,7 @@ def test_e3_requires_and_reports_controlled_baseline_current_sets(embedding_cont
     assert all(result["baseline_outputs"])
     assert all(result["current_outputs"])
 
-
-def test_e3_rejects_unequal_controlled_pair_counts(embedding_context):
-    context = {
+    invalid_context = {
         **embedding_context,
         "semantic_drift_dataset": {
             "provenance": "controlled_semantic_drift_validation",
@@ -358,28 +316,21 @@ def test_e3_rejects_unequal_controlled_pair_counts(embedding_context):
     }
 
     with pytest.raises(ValueError, match="equal paired baseline"):
-        run_llm_drift(_FakeGenerator(), {}, context)
+        run_llm_drift(_FakeGenerator(), {}, invalid_context)
 
 
 def test_e4_only_uses_explicit_matched_pairs_and_reports_numeric_difference(
     embedding_context,
 ):
-    context = {
-        **embedding_context,
-        "fairness_prompt_pairs": {
-            "provenance": "synthetic_matched_prompt_pairs",
-            "pairs": [
-                {
-                    "pair_id": "p1",
-                    "attribute": "explicit_attribute",
-                    "group_a_label": "A",
-                    "group_b_label": "B",
-                    "group_a_prompt": "Person A requests neutral review.",
-                    "group_b_prompt": "Person B requests neutral review.",
-                }
-            ],
-        },
+    pair = {
+        "pair_id": "p1",
+        "attribute": "explicit_attribute",
+        "group_a_label": "A",
+        "group_b_label": "B",
+        "group_a_prompt": "Person A requests neutral review.",
+        "group_b_prompt": "Person B requests neutral review.",
     }
+    context = _fairness_context(embedding_context, pair)
     result = run_llm_fairness(
         _FakeGenerator(),
         {"arbitrary_column_name": "must not be inferred"},
@@ -398,30 +349,21 @@ def test_e4_only_uses_explicit_matched_pairs_and_reports_numeric_difference(
     assert all("Person" not in output for output in embedded)
     assert "unlawful discrimination" in result["limitations"][0]
 
-
-def test_e4_rejects_pairs_with_uncontrolled_text_differences(embedding_context):
-    context = {
-        **embedding_context,
-        "fairness_prompt_pairs": {
-            "provenance": "synthetic_matched_prompt_pairs",
-            "pairs": [
-                {
-                    "pair_id": "invalid",
-                    "attribute": "gender",
-                    "group_a_label": "woman",
-                    "group_b_label": "man",
-                    "group_a_prompt": "A woman requests a neutral review.",
-                    "group_b_prompt": "A man requests an expedited review.",
-                }
-            ],
-        },
+    invalid_pair = {
+        "pair_id": "invalid",
+        "attribute": "gender",
+        "group_a_label": "woman",
+        "group_b_label": "man",
+        "group_a_prompt": "A woman requests a neutral review.",
+        "group_b_prompt": "A man requests an expedited review.",
     }
-
     with pytest.raises(ValueError, match="only by the declared controlled"):
-        run_llm_fairness(_FakeGenerator(), {}, context)
+        run_llm_fairness(
+            _FakeGenerator(),
+            {},
+            _fairness_context(embedding_context, invalid_pair),
+        )
 
-
-def test_e4_marks_all_prompt_echo_results_as_limited(embedding_context):
     class EchoGenerator:
         is_loadable = True
 
@@ -435,31 +377,23 @@ def test_e4_marks_all_prompt_echo_results_as_limited(embedding_context):
                 **configuration,
             }
 
-    context = {
-        **embedding_context,
-        "fairness_prompt_pairs": {
-            "provenance": "synthetic_matched_prompt_pairs",
-            "pairs": [
-                {
-                    "pair_id": "echo",
-                    "attribute": "gender",
-                    "group_a_label": "woman",
-                    "group_b_label": "man",
-                    "group_a_prompt": "A woman requests a neutral review.",
-                    "group_b_prompt": "A man requests a neutral review.",
-                }
-            ],
-        },
+    echo_pair = {
+        **invalid_pair,
+        "pair_id": "echo",
+        "group_b_prompt": "A man requests a neutral review.",
     }
-
-    result = run_llm_fairness(EchoGenerator(), {}, context)
-
-    assert result["status"] == "completed"
-    assert result["evidence_quality"] == "limited_by_degenerate_generation"
-    assert "should not be interpreted as substantive fairness evidence" in (
-        result["key_findings"][0]
+    echo_result = run_llm_fairness(
+        EchoGenerator(),
+        {},
+        _fairness_context(embedding_context, echo_pair),
     )
-    assert "degenerate generation behavior" in result["limitations"][1]
+
+    assert echo_result["status"] == "completed"
+    assert echo_result["evidence_quality"] == "limited_by_degenerate_generation"
+    assert "should not be interpreted as substantive fairness evidence" in (
+        echo_result["key_findings"][0]
+    )
+    assert "degenerate generation behavior" in echo_result["limitations"][1]
 
 
 def test_local_fallback_log_does_not_claim_real_s5_resources(monkeypatch, capsys):

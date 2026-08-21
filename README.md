@@ -24,6 +24,12 @@ interchangeable: S4 assesses governance, S5 defines the audit engagement, and
 S6 generates evidence. UAGF-XAI does not replace the upstream assessments or
 make a final legal-compliance decision.
 
+![UAGF Program Map](docs/UAGF_Program_Map.png)
+
+The map is theoretical programme material. The implementation described below
+preserves its high-level division of responsibility while documenting the
+practical contract and validation adjustments made during development.
+
 ### Upstream S4: UAGF-GMM/CGSA
 
 S4 evaluates governance maturity across the UAGF control domains. The S6
@@ -57,16 +63,6 @@ S5 supplies five of the six final validation cases. The sixth case is an
 explicitly S6-owned local LLM execution-validation configuration and is not
 represented as an S5 delivery.
 
-### UAGF programme map
-
-The following professor-provided map shows the intended relationship between
-S4, S5, and S6 at programme level:
-
-![UAGF research programme thesis map](z_docs/materials_from_sir/UAGF_Program_Map.png)
-
-The map is theoretical programme material. The implementation described below
-preserves its high-level division of responsibility while documenting the
-practical contract and validation adjustments made during development.
 
 ## S6 Thesis Project: UAGF-XAI
 
@@ -359,32 +355,69 @@ It makes the two independent S6 inputs explicit: CBEP receives normalized
 contexts, while ResourceLoader resolves execution resources. The method plan
 and `ResourceBundle` meet only at the Executor boundary.
 
-```mermaid
-flowchart TB
-    S4["S4 Governance JSON"] --> GA["Governance Adapter"]
-    GA --> GC["GovernanceContext"]
-
-    TECH["S5 Audit JSON<br/>or S6 Local Validation Config"] --> AA["Audit / Local Config Adapter"]
-    AA --> AC["AuditContext"]
-
-    GC --> CBEP["CBEP Planner"]
-    AC -- "planning metadata" --> CBEP
-    AC -- "resource references" --> RL["ResourceLoader"]
-
-    CBEP --> PLAN["Ordered Evidence Plan<br/>+ Planning Trace"]
-    RL --> RB["ResourceBundle"]
-
-    PLAN --> EXEC["Evidence Executor"]
-    RB --> EXEC
-
-    EXEC --> PATH{"System pathway"}
-    PATH -->|"traditional_ml"| TRAD["Four Evidence Layers<br/>SHAP · LIME · DiCE<br/>Fairlearn · MAPIE · Drift"]
-    PATH -->|"llm / agentic"| LLM["LLM Evidence Pathway<br/>LLM-E1 · LLM-E2 · LLM-E3 · LLM-E4"]
-
-    TRAD --> NORM["Evidence Normalizer"]
-    LLM --> NORM
-    NORM --> SCHEMA["Unified EvidenceResult Schema"]
-    SCHEMA --> REPORT["HTML Report + PDF Export"]
+```text
+┌────────────────────────┐                   ┌────────────────────────────────┐
+│ Input 1:               |                   | Input 2:                       |
+|   S4 Governance JSON   │                   │   S5 Audit JSON or             │
+└───────────┬────────────┘                   │   S6 Local Validation Config   │
+            ▼                                └───────────────┬────────────────┘
+┌────────────────────────┐                                   ▼
+│ Governance Adapter     │                ┌──────────────────────────────────────┐
+└───────────┬────────────┘                │ Audit Adapter / Local Config Adapter │
+            ▼                             └──────────────────┬───────────────────┘
+┌────────────────────────┐                                   ▼
+│ GovernanceContext      │                    ┌─────────────────────────────┐
+└───────────┬────────────┘                    │        AuditContext         │
+            │                                 └─────┬─────────────────┬─────┘
+            │ planning context                      │ for planning    │ for resources loading
+            └───────────────────┐        ┌──────────┘                 ▼
+                                ▼        ▼                  ┌────────────────────┐
+                         ┌────────────────────┐             │ ResourceLoader     │
+                         │ CBEP Planner       │             └─────────┬──────────┘
+                         └─────────┬──────────┘                       │
+                                   │                      ┌───────────┼────────────┐
+                                   │                      ▼                        ▼
+                                   │                    Model Loader          Dataset Loader
+                                   │                      └───────────┬────────────┘
+                                   │                                  ▼
+                                   ▼                        ┌────────────────────┐
+                         ┌────────────────────┐             │ ResourceBundle     │
+                         │ Evidence Plan      │             └─────────┬──────────┘
+                         │ + Planning Trace   │                       │
+                         └─────────┬──────────┘                       │
+                                   └──────────────┬───────────────────┘
+                                                  ▼
+                                        ┌────────────────────┐
+                                        │ Evidence Executor  │
+                                        └─────────┬──────────┘
+                                                  ▼
+                                        ┌────────────────────┐
+                                        │ Select Pathway     │
+                                        └─────────┬──────────┘
+                             ┌────────────────────┴─────────────────────┐
+                             ▼                                          ▼
+             ┌──────────────────────────────────┐      ┌──────────────────────────────────────┐
+             │ If Traditional ML system         │      │ Else LLM / Agentic system            │
+             ├──────────────────────────────────|      ├──────────────────────────────────────|
+             │ Layer 1: Explainability (SHAP,   │      | LLM-E1: Grounding Score              |
+             │          LIME, DiCE)             │      | LLM-E2: Self-Consistency Score       |
+             │ Layer 2: Fairness (Fairlearn)    │      | LLM-E3: Semantic Drift Index         |
+             │ Layer 3: Uncertainty (MAPIE)     │      | LLM-E4: Differential Prompt Fairness |
+             │ Layer 4: Drift (Evidently)       │      |                                      |
+             └─────────────────┬────────────────┘      └───────────┬──────────────────────────┘
+                               └────────────────┬──────────────────┘
+                                                ▼
+                                      ┌────────────────────┐
+                                      │ Evidence Normalizer│
+                                      └─────────┬──────────┘
+                                                ▼
+                                      ┌────────────────────┐
+                                      │ EvidenceResult     │
+                                      └─────────┬──────────┘
+                                                ▼
+                                      ┌────────────────────┐
+                                      │ HTML + PDF Report  │
+                                      └────────────────────┘
 ```
 
 `AuditContext` intentionally has two read-only consumers:
@@ -420,36 +453,81 @@ does not claim to use a generic CSP solver. The S5 `csp_satisfied` field is an
 upstream audit-status signal that can broaden the sweep; it is not an S6 solver
 result.
 
-```mermaid
-flowchart TB
-    INPUT["AuditContext + GovernanceContext"] --> PATH{"System pathway?"}
-
-    PATH -->|"traditional_ml"| TC["Traditional evidence catalogue"]
-    PATH -->|"llm / agentic"| LC["LLM-E1 to LLM-E4 catalogue"]
-
-    TC --> BASE["Build risk-tier base plan"]
-    LC --> BASE
-    BASE --> ARTICLE["Add EU AI Act article requirements"]
-    ARTICLE --> GOV{"S4 governance priority?"}
-
-    GOV -->|"Yes"| PROMOTE["Promote required methods<br/>or enable a broader sweep"]
-    GOV -->|"No"| CSP{"S5 csp_satisfied?"}
-    PROMOTE --> CSP
-
-    CSP -->|"False"| BROADEN["Broaden to the full pathway catalogue"]
-    CSP -->|"True"| MERGE["Merged candidate method set"]
-    BROADEN --> MERGE
-
-    MERGE --> FILTER["Task and modality compatibility screening"]
-    FILTER --> COMP["Compatible methods"]
-    FILTER --> EXCL["Incompatible methods<br/>with exclusion reasons"]
-
-    COMP --> ORDER["Apply stable catalogue ordering"]
-    ORDER --> PLAN["Minimum-sufficient operational plan"]
-
-    PLAN --> OUTPUT["Final plan + auditable planning trace"]
-    EXCL --> OUTPUT
-    OUTPUT --> EXEC["Evidence Executor"]
+```text
+                 ┌──────────────────────────────────┐
+                 │ AuditContext + GovernanceContext │
+                 └────────────────┬─────────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Select System Pathway            │
+                 └────────────────┬─────────────────┘
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+       ┌────────────────────────┐  ┌────────────────────────┐
+       │ Traditional Catalogue  │  │ LLM-E1 to LLM-E4       │
+       └────────────┬───────────┘  └────────────┬───────────┘
+                    └─────────────┬─────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Build Risk-Tier Base Plan        │
+                 └────────────────┬─────────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Add EU AI Act Requirements       │
+                 └────────────────┬─────────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ S4 Governance Priority?          │
+                 └────────────────┬─────────────────┘
+                          ┌───────┴───────┐
+                      Yes ▼               ▼ No
+       ┌────────────────────────┐         │
+       │ Promote Methods or     │         │
+       │ Broaden Evidence Sweep │         │
+       └────────────┬───────────┘         │
+                    └─────────────┬───────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ S5 csp_satisfied?                │
+                 └────────────────┬─────────────────┘
+                          ┌───────┴───────┐
+                    False ▼               ▼ True
+       ┌────────────────────────┐         │
+       │ Use Full Pathway       │         │
+       │ Catalogue              │         │
+       └────────────┬───────────┘         │
+                    └─────────────┬───────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Merged Candidate Method Set      │
+                 └────────────────┬─────────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Task + Modality Compatibility    │
+                 └────────────────┬─────────────────┘
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+       ┌────────────────────────┐  ┌────────────────────────┐
+       │ Compatible Methods     │  │ Incompatible Methods   │
+       └────────────┬───────────┘  │ + Exclusion Reasons    │
+                    ▼              └────────────┬───────────┘
+       ┌────────────────────────┐               │
+       │ Stable Method Ordering │               │
+       └────────────┬───────────┘               │
+                    ▼                           │
+       ┌────────────────────────┐               │
+       │ Minimum-Sufficient     │               │
+       │ Operational Plan       │               │
+       └────────────┬───────────┘               │
+                    └─────────────┬─────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Final Plan + Auditable Trace     │
+                 └────────────────┬─────────────────┘
+                                  ▼
+                 ┌──────────────────────────────────┐
+                 │ Evidence Executor                │
+                 └──────────────────────────────────┘
 ```
 
 ### Planning inputs and rules
@@ -665,10 +743,6 @@ outputs/       generated evidence artifacts and final reports
 tests/         unit/regression suite and optional integration coverage
 z_docs/        project context, status, thesis notes, and professor materials
 ```
-
-For detailed architectural and thesis-claim boundaries, read
-`z_docs/PROJECT_CONTEXT.md`. For final delivery status, read
-`z_docs/IMPLEMENTATION_STATUS.md`.
 
 ## Environment Setup
 

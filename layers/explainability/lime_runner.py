@@ -275,6 +275,7 @@ def run_lime(
         "type": "explainability",
         "method": "LIME",
         "status": "completed",
+        "explainer": "LimeTabularExplainer",
         "mode": mode,
         "sample_index": 0,
         "features_explained": len(contributions),

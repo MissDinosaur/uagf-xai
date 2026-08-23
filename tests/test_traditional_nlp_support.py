@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.linear_model import LogisticRegression
 
 from adapters.s5_audit_adapter import AuditAdapter
 from api.audit_api import _build_evaluation_views
@@ -220,6 +221,36 @@ def test_text_lime_uses_raw_text_prediction_callback(
     assert result["explainer"] == "LimeTextExplainer"
     assert result["input_representation"] == "raw_text"
     assert result["token_contributions"]
+    assert output_path.exists()
+
+
+def test_tabular_lime_reports_the_actual_explainer(monkeypatch, tmp_path):
+    X_model = pd.DataFrame(
+        {
+            "age": np.arange(30, dtype=float),
+            "income": np.tile([30_000.0, 60_000.0, 90_000.0], 10),
+        }
+    )
+    y = pd.Series(np.tile([0, 1], 15))
+    model = LogisticRegression().fit(X_model, y)
+    output_path = tmp_path / "tabular_lime.html"
+    monkeypatch.setattr(
+        lime_runner,
+        "build_output_path",
+        lambda *args, **kwargs: output_path,
+    )
+
+    result = lime_runner.run_lime(
+        model,
+        X_model,
+        task_type="binary_classification",
+        modality="tabular",
+        provider_name="test",
+    )
+
+    assert result["status"] == "completed"
+    assert result["explainer"] == "LimeTabularExplainer"
+    assert result["feature_contributions"]
     assert output_path.exists()
 
 

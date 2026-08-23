@@ -777,6 +777,11 @@ def build_evidence_narrative(token: str, result: dict, audit_context) -> dict:
                 for index, item in enumerate(ranked[:10], 1)
             ],
         }
+        table_intro = (
+            "The table shows up to the 10 highest-ranked SHAP features. The "
+            "complete feature-importance ranking is preserved in the Raw "
+            "Evidence Appendix."
+        )
     elif token == "fairness":
         feature_results = _fairness_feature_results(result)
         table = {
@@ -1122,25 +1127,34 @@ def build_runtime_reproducibility(
     except (TypeError, ValueError):
         total_runtime_display = "Unavailable"
 
-    project_state = runtime_context.get("project_state") or {}
     common_facts = [
         {"label": "Run ID", "value": _display(runtime_context.get("run_id"))},
         {"label": "Run timestamp", "value": _display(runtime_context.get("run_timestamp"))},
         {"label": "Python version", "value": _display(runtime_context.get("python_version"))},
         {"label": "Platform", "value": _display(runtime_context.get("platform"))},
         {"label": "Total runtime", "value": total_runtime_display},
-        {"label": "CBEP version", "value": _display(project_state.get("cbep_version"))},
-        {
-            "label": "Evidence schema / report version",
-            "value": (
-                f"{_display(project_state.get('evidence_schema_version'))} / "
-                f"{_display(project_state.get('report_version'))}"
-            ),
-        },
         {"label": "HTML report path", "value": _display(runtime_context.get("html_report_path"))},
         {"label": "PDF report path", "value": _display(runtime_context.get("pdf_report_path") if runtime_context.get("pdf_generated") else None, "Not generated")},
     ]
 
+    is_llm = str(_value(audit_context, "system_type", "")).lower() in {
+        "llm",
+        "agentic",
+    }
+    visible_dependencies = (
+        ("torch", "transformers", "sentence-transformers")
+        if is_llm
+        else (
+            "scikit-learn",
+            "shap",
+            "lime",
+            "dice-ml",
+            "fairlearn",
+            "mapie",
+            "evidently",
+        )
+    )
+    dependency_versions = runtime_context.get("dependency_versions") or {}
     dependency_rows = [
         {
             "name": name,
@@ -1152,10 +1166,25 @@ def build_runtime_reproducibility(
                 "peft",
             } else "Core",
         }
-        for name, version in (runtime_context.get("dependency_versions") or {}).items()
+        for name in visible_dependencies
+        if (version := dependency_versions.get(name)) is not None
     ]
     provenance_rows = []
+    traditional_inputs = {"training_dataset", "evaluation_dataset"}
+    llm_inputs = {
+        "golden_set",
+        "system_prompt",
+        "rag_manifest",
+        "guardrail_config",
+        "evaluation_embedding_model",
+        "semantic_drift_validation",
+        "fairness_prompt_pairs",
+    }
     for name, record in (runtime_context.get("input_provenance") or {}).items():
+        if (is_llm and name in traditional_inputs) or (
+            not is_llm and name in llm_inputs
+        ):
+            continue
         full_hash = str(record.get("sha256", "unavailable"))
         abbreviated_hash = (
             f"{full_hash[:12]}…" if len(full_hash) == 64 else full_hash
@@ -1166,9 +1195,6 @@ def build_runtime_reproducibility(
                 "status": record.get("status", "unavailable"),
                 "path": record.get("path", "unavailable"),
                 "sha256": abbreviated_hash,
-                "included_file_count": record.get(
-                    "included_file_count", "not_applicable"
-                ),
             }
         )
 

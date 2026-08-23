@@ -17,7 +17,7 @@ class PDFExportError(RuntimeError):
 
 
 def export_html_to_pdf(html_path: str | Path, pdf_path: str | Path) -> Path:
-    """Render a local HTML report as an A4 PDF and return its resolved path."""
+    """Render a local HTML report as a landscape A4 PDF."""
     html_file = Path(html_path).resolve()
     pdf_file = Path(pdf_path).resolve()
     if not html_file.is_file():
@@ -57,6 +57,7 @@ def export_html_to_pdf(html_path: str | Path, pdf_path: str | Path) -> Path:
                 page.pdf(
                     path=str(pdf_file),
                     format="A4",
+                    landscape=True,
                     print_background=True,
                     prefer_css_page_size=True,
                 )

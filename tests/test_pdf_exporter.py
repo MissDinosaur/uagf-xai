@@ -95,7 +95,10 @@ def test_pdf_exporter_opens_details_and_writes_pdf_with_mocked_playwright(
     assert calls["uri"] == html.resolve().as_uri()
     assert any("details" in script for script in calls["evaluations"])
     assert calls["media"] == "print"
+    assert calls["pdf_options"]["format"] == "A4"
+    assert calls["pdf_options"]["landscape"] is True
     assert calls["pdf_options"]["print_background"] is True
+    assert calls["pdf_options"]["prefer_css_page_size"] is True
     assert calls["closed"] is True
 
 

@@ -110,6 +110,32 @@ def test_report_structure_status_visibility_and_summary_cards(
     assert "Package versions" not in html
     assert "Method Applicability and Skipped Evidence" not in html
     assert "EU AI Act Article" not in _section(html, "coverage-matrix")
+    assert "size: A4 landscape" in html
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in html
+
+    runtime = _section(html, "runtime-reproducibility")
+    assert "CBEP version" not in runtime
+    assert "Evidence schema / report version" not in runtime
+    assert "evidence_schema_version" not in html
+    assert "report_version" not in html
+    assert "Key Dependency Versions" in runtime
+    assert "<td>scikit-learn</td>" in runtime
+    assert "<td>numpy</td>" not in runtime
+    assert "complete dependency inventory" in runtime
+    assert "SHA-256 fingerprint is a cryptographic content digest" in runtime
+    assert "directories use a deterministic manifest" in runtime
+    assert "<th>Files</th>" not in runtime
+    raw = _section(html, "raw-evidence")
+    assert "&#34;dependencies&#34;" in raw
+    assert "&#34;numpy&#34;" in raw
+    assert "&#34;project_state&#34;" not in raw
+    for llm_input in (
+        "Golden Set",
+        "System Prompt",
+        "Rag Manifest",
+        "Guardrail Config",
+    ):
+        assert llm_input not in runtime
 
     executive = _section(html, "executive-summary")
     assert "System type / Modality" in executive
@@ -246,11 +272,15 @@ def test_talentsift_report_uses_text_drift_and_ngram_semantics(
 ):
     traditional_audit_context.modality = "text"
     traditional_audit_context.feature_columns = ["cv_text"]
+    importance = [
+        {"feature": f"token_{index:02d}", "importance": 1.0 / index}
+        for index in range(1, 13)
+    ]
     shap = unified_result_factory(
         metrics={
             "feature_semantics": "tokens_and_ngrams",
-            "top_features": ["with years"],
-            "feature_importance": [{"feature": "with years", "importance": 0.041466}],
+            "top_features": [item["feature"] for item in importance[:10]],
+            "feature_importance": importance,
         }
     )
     drift = unified_result_factory(
@@ -282,6 +312,12 @@ def test_talentsift_report_uses_text_drift_and_ngram_semantics(
     assert expected in html
     assert "tokens_and_ngrams" in html
     assert "<th>Token / n-gram</th>" in html
+    findings = _section(html, "evidence-findings")
+    raw = _section(html, "raw-evidence")
+    assert "10 highest-ranked SHAP features" in findings
+    assert "token_10" in findings
+    assert "token_11" not in findings
+    assert "token_11" in raw and "token_12" in raw
 
 
 def test_llm_reports_show_canonical_methods_and_resource_states(
@@ -325,6 +361,9 @@ def test_llm_reports_show_canonical_methods_and_resource_states(
     assert "status-metadata-only" in metadata_html
     assert "Golden-set records" in metadata_html
     assert metadata_html.count("status-skipped") >= 4
+    metadata_runtime = _section(metadata_html, "runtime-reproducibility")
+    assert "Training Dataset" not in metadata_runtime
+    assert "Evaluation Dataset" not in metadata_runtime
 
     local = AuditContext(
         system_type="llm",

@@ -799,8 +799,8 @@ Run the default offline suite:
 python -m pytest -q
 ```
 
-The final suite contains 17 test modules and 113 test functions. Parametrization
-produces 127 passing cases in the default offline suite. It covers adapters,
+The final suite contains 17 test modules and 114 test functions. Parametrization
+produces 128 passing cases in the default offline suite. It covers adapters,
 resource contracts, exact-model integrity, CBEP, compatibility filtering,
 evidence normalization, traditional and LLM methods, report semantics,
 provenance, ordering, and PDF export.

@@ -335,16 +335,11 @@ def collect_reproducibility_metadata(
 
 
 def public_report_reproducibility_metadata(internal_metadata: dict) -> dict:
-    """Project internal metadata into a Git-free user-facing report context."""
+    """Project internal metadata into a minimal user-facing report context."""
     internal_reproducibility = internal_metadata.get("reproducibility") or {}
-    internal_project_state = internal_reproducibility.get("project_state") or {}
-    public_project_state = {
-        key: value for key, value in internal_project_state.items() if key != "git"
-    }
     public_reproducibility = {
         "runtime": dict(internal_reproducibility.get("runtime") or {}),
         "dependencies": dict(internal_reproducibility.get("dependencies") or {}),
-        "project_state": public_project_state,
         "input_provenance": dict(
             internal_reproducibility.get("input_provenance") or {}
         ),
@@ -355,7 +350,6 @@ def public_report_reproducibility_metadata(internal_metadata: dict) -> dict:
         "platform": internal_metadata.get("platform"),
         "run_id": internal_metadata.get("run_id"),
         "dependency_versions": public_reproducibility["dependencies"],
-        "project_state": public_project_state,
         "input_provenance": public_reproducibility["input_provenance"],
         "reproducibility": public_reproducibility,
     }

@@ -741,23 +741,28 @@ report/        report model, ordering, provenance, HTML template, and PDF export
 data/          five formal S5 cases and one S6 local validation case
 outputs/       generated evidence artifacts and final reports
 tests/         unit/regression suite and optional integration coverage
-z_docs/        project context, status, thesis notes, and professor materials
 ```
 
 ## Environment Setup
 
 The frozen environment uses Python 3.12.10 and scikit-learn 1.8.0.
 
-```powershell
-.\venv312_sklearn18\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+Activate the virtual environment venv312:
+   ```bash
+   # Windows (CMD/Powershell)
+   venv312\Scripts\activate
 
-The exact resolved environment is recorded in:
+   # Windows (git bash)
+   source venv312/Scripts/activate
 
-```text
-z_docs/notes/requirements-py312-sklearn18-final-lock.txt
-```
+   # macOS/Linux
+   source venv312/bin/activate
+   ```
+
+And then Install the dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 PDF export requires Playwright Chromium:
 
@@ -794,13 +799,13 @@ Run the default offline suite:
 python -m pytest -q
 ```
 
-The final suite contains 20 test modules and 165 test functions, producing 192
-parameterized passing cases in the frozen environment. It covers adapters,
+The final suite contains 17 test modules and 113 test functions. Parametrization
+produces 127 passing cases in the default offline suite. It covers adapters,
 resource contracts, exact-model integrity, CBEP, compatibility filtering,
 evidence normalization, traditional and LLM methods, report semantics,
 provenance, ordering, and PDF export.
 
-The real browser smoke test is optional integration coverage:
+One additional real-browser smoke test is optional integration coverage:
 
 ```bash
 python -m pytest -m integration

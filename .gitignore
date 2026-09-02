@@ -4,6 +4,8 @@ venv312/
 venv312_sklearn18/
 outputs/
 z_docs/
+models/
+benchmarks/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uagf-xai"
+version = "1.0.0"
+description = "Constraint-based audit evidence planning and report generation for traditional ML and LLM/agentic systems."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "xai",
+    "ai-governance",
+    "audit-evidence",
+    "eu-ai-act",
+    "fairness",
+    "drift",
+    "uncertainty",
+    "llm-evaluation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy==2.3.5",
+    "pandas==2.3.3",
+    "scipy==1.15.3",
+    "scikit-learn==1.8.0",
+    "joblib==1.5.3",
+    "Jinja2==3.1.6",
+    "matplotlib==3.10.8",
+    "shap==0.49.1",
+    "lime==0.2.0.1",
+    "dice-ml==0.12",
+    "fairlearn==0.13.0",
+    "MAPIE==1.3.0",
+    "evidently==0.7.21",
+]
+
+[project.optional-dependencies]
+llm = [
+    "torch==2.11.0",
+    "transformers==5.6.0",
+    "safetensors==0.7.0",
+]
+pdf = [
+    "playwright==1.61.0",
+]
+model-formats = [
+    "xgboost==3.2.0",
+    "lightgbm==4.6.0",
+]
+dev = [
+    "pytest==9.1.1",
+    "build",
+    "twine",
+]
+
+[project.scripts]
+uagf-xai = "uagf_xai.cli:main"
+
+[tool.setuptools]
+packages = [
+    "adapters",
+    "api",
+    "planner",
+    "schema",
+    "pipeline",
+    "resources",
+    "report",
+    "layers",
+    "layers.explainability",
+    "layers.fairness",
+    "layers.uncertainty",
+    "layers.drift",
+    "layers.llm",
+    "uagf_xai",
+]
+py-modules = ["main", "output_naming"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+report = ["templates/report_template.html"]

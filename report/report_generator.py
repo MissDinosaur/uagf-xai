@@ -64,9 +64,9 @@ def generate_report(
     generate_pdf=True,
     runtime_context=None,
 ):
-
+    template_dir = Path(__file__).resolve().parent / "templates"
     env = Environment(
-        loader=FileSystemLoader("report/templates"),
+        loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(["html", "xml"]),
     )
     env.filters["tojson_pretty"] = _to_json_pretty

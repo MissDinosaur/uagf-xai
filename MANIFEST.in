@@ -1,0 +1,43 @@
+include README.md
+include LICENSE
+include main.py
+include output_naming.py
+include report/templates/report_template.html
+
+recursive-include adapters *.py
+recursive-include api *.py
+recursive-include planner *.py
+recursive-include schema *.py
+recursive-include pipeline *.py
+recursive-include resources *.py
+recursive-include report *.py
+recursive-include layers *.py
+recursive-include uagf_xai *.py
+
+prune tests
+prune data
+prune outputs
+prune benchmarks
+prune z_docs
+prune models
+prune venv*
+prune .venv
+prune .pytest_cache
+prune __pycache__
+prune .git
+prune build
+prune dist
+
+exclude .env
+global-exclude *.log
+global-exclude *.py[cod]
+global-exclude *.joblib
+global-exclude *.pkl
+global-exclude *.pickle
+global-exclude *.safetensors
+global-exclude *.bin
+global-exclude *.pt
+global-exclude *.pth
+global-exclude *.ckpt
+global-exclude *.onnx
+global-exclude *.gguf

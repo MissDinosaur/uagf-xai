@@ -24,7 +24,8 @@ interchangeable: S4 assesses governance, S5 defines the audit engagement, and
 S6 generates evidence. UAGF-XAI does not replace the upstream assessments or
 make a final legal-compliance decision.
 
-![UAGF Program Map](docs/UAGF_Program_Map.png)
+The professor-provided UAGF program map is intentionally not embedded in the
+PyPI long description or distributed as package data.
 
 The map is theoretical programme material. The implementation described below
 preserves its high-level division of responsibility while documenting the
@@ -743,7 +744,77 @@ outputs/       generated evidence artifacts and final reports
 tests/         unit/regression suite and optional integration coverage
 ```
 
-## Environment Setup
+## Installation
+
+UAGF-XAI supports Python 3.12. Install the base package with:
+
+```bash
+pip install uagf-xai
+```
+
+For PDF export, install the PDF extra and the Playwright Chromium runtime:
+
+```bash
+pip install "uagf-xai[pdf]"
+python -m playwright install chromium
+```
+
+For local LLM execution support:
+
+```bash
+pip install "uagf-xai[llm]"
+```
+
+Install both optional capabilities with:
+
+```bash
+pip install "uagf-xai[llm,pdf]"
+python -m playwright install chromium
+```
+
+Run the formal S5-driven workflow with externally supplied audit resources:
+
+```bash
+uagf-xai \
+  --mode s5 \
+  --s4-json path/to/s4.json \
+  --s5-json path/to/s5.json
+```
+
+The S4/S5 JSON documents, datasets, and model artifacts are supplied by the
+user; they are not included in the PyPI distribution. Relative resource paths
+are resolved from the current working directory, and generated evidence and
+reports are written under `./outputs/`. Use `--no-pdf` when PDF support is not
+installed.
+
+The thesis-specific local DistilGPT2 and MiniLM validation resources are not
+included in the PyPI distribution. Local mode remains available only when the
+caller supplies the required local validation resources.
+
+Only load `.pickle`, `.pkl`, and `.joblib` model artifacts from trusted
+sources. Deserializing an untrusted Python model artifact can execute arbitrary
+code.
+
+Minimal Python API usage:
+
+```python
+import json
+from pathlib import Path
+
+from uagf_xai import AuditAdapter, GovernanceAdapter, audit
+
+s4_data = json.loads(Path("path/to/s4.json").read_text(encoding="utf-8"))
+s5_data = json.loads(Path("path/to/s5.json").read_text(encoding="utf-8"))
+
+governance_context = GovernanceAdapter.from_cgsa_report(s4_data)
+audit_context = AuditAdapter.from_audit_report(s5_data)
+results = audit(audit_context, governance_context, generate_pdf=False)
+```
+
+UAGF-XAI generates technical audit evidence. It does not make a final legal
+compliance determination.
+
+## Source-Checkout Development Environment
 
 The frozen environment uses Python 3.12.10 and scikit-learn 1.8.0.
 
@@ -799,8 +870,8 @@ Run the default offline suite:
 python -m pytest -q
 ```
 
-The final suite contains 17 test modules and 114 test functions. Parametrization
-produces 128 passing cases in the default offline suite. It covers adapters,
+The final suite contains 18 test modules and 120 test functions. Parametrization
+produces 134 passing cases in the default offline suite. It covers adapters,
 resource contracts, exact-model integrity, CBEP, compatibility filtering,
 evidence normalization, traditional and LLM methods, report semantics,
 provenance, ordering, and PDF export.

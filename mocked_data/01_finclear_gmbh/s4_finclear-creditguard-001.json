@@ -1,0 +1,471 @@
+{
+  "schema_version": "1.0.0",
+  "metadata": {
+    "assessment_id": "finclear-creditguard-001",
+    "organisation_name": "FinClear GmbH",
+    "system_under_audit": "CreditGuard v2.1",
+    "cgsa_version": "1.0.0",
+    "assessment_timestamp": "2026-05-28T09:00:00Z",
+    "risk_tier": "high",
+    "document_sources": [
+      "risk_management_file.txt",
+      "eu_declaration_of_conformity.txt",
+      "post_market_monitoring_plan.txt"
+    ],
+    "uagf_gmm_version": "1.0.0"
+  },
+  "overall_scores": {
+    "composite_maturity_score": 3.6,
+    "composite_maturity_label": "defined",
+    "eu_ai_act_coverage_pct": 95.0,
+    "csp_satisfiable": true,
+    "governance_verdict": "compliant",
+    "controls_assessed": 10,
+    "controls_meeting_threshold": 10,
+    "controls_below_threshold": 0
+  },
+  "domains": [
+    {
+      "domain_id": "D1",
+      "domain_name": "Risk Management",
+      "domain_score": 3.8,
+      "domain_eu_ai_act_articles": [
+        "Article 9"
+      ],
+      "controls": [
+        {
+          "control_id": "C01",
+          "control_name": "Risk Identification",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "Five-risk register with Art. 9 cross-refs; quarterly CRMO review.",
+          "confidence": 0.93,
+          "source_frameworks": [
+            "EU AI Act",
+            "ISO 42001"
+          ],
+          "eu_ai_act_articles": [
+            "Article 9"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        },
+        {
+          "control_id": "C02",
+          "control_name": "Risk Treatment & Monitoring",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "Mitigation measures documented and tested for all five risks.",
+          "confidence": 0.91,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 9"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    },
+    {
+      "domain_id": "D2",
+      "domain_name": "Data Governance",
+      "domain_score": 3.5,
+      "domain_eu_ai_act_articles": [
+        "Article 10"
+      ],
+      "controls": [
+        {
+          "control_id": "C07",
+          "control_name": "Data Quality Management",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "Data minimisation policy; quarterly source audit; Art. 10 para 5 derogation for age.",
+          "confidence": 0.9,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 10 point 2"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        },
+        {
+          "control_id": "C08",
+          "control_name": "Bias & Fairness Controls",
+          "maturity_score": 3,
+          "maturity_label": "defined",
+          "evidence_summary": "Demographic parity monitored monthly; equal-opportunity calibration applied.",
+          "confidence": 0.88,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 10"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    },
+    {
+      "domain_id": "D3",
+      "domain_name": "Model Development and Testing",
+      "domain_score": 3.7,
+      "domain_eu_ai_act_articles": [
+        "Article 15"
+      ],
+      "controls": [
+        {
+          "control_id": "C14",
+          "control_name": "Model Testing",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "5-fold CV AUC 0.82; adversarial probe at L-inf 0.01; calibration documented.",
+          "confidence": 0.94,
+          "source_frameworks": [
+            "ISO 42001"
+          ],
+          "eu_ai_act_articles": [
+            "Article 15"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    },
+    {
+      "domain_id": "D4",
+      "domain_name": "Transparency and Explainability",
+      "domain_score": 3.4,
+      "domain_eu_ai_act_articles": [
+        "Article 13"
+      ],
+      "controls": [
+        {
+          "control_id": "C20",
+          "control_name": "Model Card",
+          "maturity_score": 3,
+          "maturity_label": "defined",
+          "evidence_summary": "Model card includes intended purpose, limitations, fairness constraints, contact.",
+          "confidence": 0.87,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 13"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        },
+        {
+          "control_id": "C21",
+          "control_name": "SHAP / Explainability Reports",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "Per-prediction SHAP values available to credit officers; aggregate reports quarterly.",
+          "confidence": 0.89,
+          "source_frameworks": [
+            "ISO 42001"
+          ],
+          "eu_ai_act_articles": [
+            "Article 13"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    },
+    {
+      "domain_id": "D5",
+      "domain_name": "Human Oversight and Accountability",
+      "domain_score": 3.8,
+      "domain_eu_ai_act_articles": [
+        "Article 14"
+      ],
+      "controls": [
+        {
+          "control_id": "C26",
+          "control_name": "Human Oversight Roles",
+          "maturity_score": 4,
+          "maturity_label": "optimised",
+          "evidence_summary": "Two-person adverse-decision review; hard UI stop at confidence < 0.55.",
+          "confidence": 0.92,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 14"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    },
+    {
+      "domain_id": "D6",
+      "domain_name": "Monitoring and Incident Response",
+      "domain_score": 3.4,
+      "domain_eu_ai_act_articles": [
+        "Article 17",
+        "Article 72"
+      ],
+      "controls": [
+        {
+          "control_id": "C30",
+          "control_name": "Incident Response Procedures",
+          "maturity_score": 3,
+          "maturity_label": "defined",
+          "evidence_summary": "IR runbook with 15-day BaFin reporting SLA; PMM Plan v1.0 signed.",
+          "confidence": 0.86,
+          "source_frameworks": [
+            "EU AI Act",
+            "ISO 42001"
+          ],
+          "eu_ai_act_articles": [
+            "Article 72"
+          ],
+          "hard_constraint": {
+            "applicable": true,
+            "threshold_score": 3,
+            "satisfied": true
+          },
+          "gap_severity": null
+        },
+        {
+          "control_id": "C31",
+          "control_name": "Automated Monitoring & Alerts",
+          "maturity_score": 3,
+          "maturity_label": "defined",
+          "evidence_summary": "Weekly PSI dashboard; monthly AUC review; MLflow version registry.",
+          "confidence": 0.83,
+          "source_frameworks": [
+            "EU AI Act"
+          ],
+          "eu_ai_act_articles": [
+            "Article 72"
+          ],
+          "hard_constraint": {
+            "applicable": false,
+            "threshold_score": null,
+            "satisfied": true
+          },
+          "gap_severity": null
+        }
+      ]
+    }
+  ],
+  "eu_ai_act_compliance_matrix": {
+    "article_9": {
+      "article_reference": "Article 9",
+      "article_title": "Risk management system",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C01",
+        "C02"
+      ],
+      "controls_satisfied": [
+        "C01",
+        "C02"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "Full risk lifecycle with five risks assessed and accepted."
+    },
+    "article_10": {
+      "article_reference": "Article 10",
+      "article_title": "Data and data governance",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C07",
+        "C08"
+      ],
+      "controls_satisfied": [
+        "C07",
+        "C08"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "Data minimisation, quality, Art. 10 para 5 derogation documented."
+    },
+    "article_13": {
+      "article_reference": "Article 13",
+      "article_title": "Transparency to deployers",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C20",
+        "C21"
+      ],
+      "controls_satisfied": [
+        "C20",
+        "C21"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "Model card and per-prediction SHAP reports available."
+    },
+    "article_14": {
+      "article_reference": "Article 14",
+      "article_title": "Human oversight",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C26"
+      ],
+      "controls_satisfied": [
+        "C26"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "Two-person review and UI safeguards in place."
+    },
+    "article_15": {
+      "article_reference": "Article 15",
+      "article_title": "Accuracy and robustness",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C14"
+      ],
+      "controls_satisfied": [
+        "C14"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "AUC 0.82; adversarial robustness 0.74 at L-inf 0.01."
+    },
+    "article_17": {
+      "article_reference": "Article 17",
+      "article_title": "Quality management",
+      "status": "satisfied",
+      "controls_mapped": [
+        "C30",
+        "C31"
+      ],
+      "controls_satisfied": [
+        "C30",
+        "C31"
+      ],
+      "coverage_pct": 100.0,
+      "hard_constraints_violated": [],
+      "article_summary": "PMM plan and IR runbook in place."
+    }
+  },
+  "hard_constraint_results": {
+    "csp_satisfiable": true,
+    "total_hard_constraints": 18,
+    "violated_constraints": [],
+    "satisfied_constraints": [
+      {
+        "control_id": "C01",
+        "control_name": "Risk Identification",
+        "required_score": 3,
+        "actual_score": 4,
+        "eu_ai_act_article": "Article 9"
+      },
+      {
+        "control_id": "C07",
+        "control_name": "Data Quality Management",
+        "required_score": 3,
+        "actual_score": 4,
+        "eu_ai_act_article": "Article 10 point 2"
+      },
+      {
+        "control_id": "C14",
+        "control_name": "Model Testing",
+        "required_score": 3,
+        "actual_score": 4,
+        "eu_ai_act_article": "Article 15"
+      },
+      {
+        "control_id": "C20",
+        "control_name": "Model Card",
+        "required_score": 3,
+        "actual_score": 3,
+        "eu_ai_act_article": "Article 13"
+      },
+      {
+        "control_id": "C26",
+        "control_name": "Human Oversight Roles",
+        "required_score": 3,
+        "actual_score": 4,
+        "eu_ai_act_article": "Article 14"
+      },
+      {
+        "control_id": "C30",
+        "control_name": "Incident Response",
+        "required_score": 3,
+        "actual_score": 3,
+        "eu_ai_act_article": "Article 72"
+      }
+    ]
+  },
+  "remediation_roadmap": [],
+  "aaa_phase5_handoff": {
+    "phase5_verdict": "PASS",
+    "phase5_narrative_summary": "All six CGSA domains meet maturity threshold 3. CSP satisfiable across 18 hard constraints. EU AI Act coverage 95.0% (>= 80%). CreditGuard v2.1 demonstrates a mature governance posture with documented risk management, data quality controls, per-prediction SHAP explainability, two-person oversight, and post-market monitoring aligned with EU AI Act Articles 9, 10, 13, 14, 15, and 72.",
+    "blocking_findings_count": 0,
+    "blocking_findings": [],
+    "positive_findings": [
+      {
+        "control_id": "C01",
+        "control_name": "Risk Identification",
+        "maturity_score": 4,
+        "finding": "Comprehensive five-risk register with CRMO sign-off and quarterly review cycle."
+      },
+      {
+        "control_id": "C21",
+        "control_name": "SHAP Explainability",
+        "maturity_score": 4,
+        "finding": "Per-prediction SHAP values available to credit officers; aggregate feature importance published quarterly."
+      },
+      {
+        "control_id": "C26",
+        "control_name": "Human Oversight Roles",
+        "maturity_score": 4,
+        "finding": "Two-person adverse-decision review enforced at UI level with hard confidence threshold."
+      }
+    ],
+    "low_confidence_controls": [],
+    "aaa_recommended_follow_up": [
+      {
+        "recommendation": "Upgrade automated monitoring (C31) to optimised by Q3 2026.",
+        "rationale": "Real-time drift alerting would further reduce R-002 residual risk.",
+        "urgency": "recommended"
+      }
+    ],
+    "cgsa_report_url": "https://cgsa.example/reports/finclear-creditguard-001"
+  }
+}

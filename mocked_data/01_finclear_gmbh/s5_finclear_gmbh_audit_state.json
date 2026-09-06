@@ -1,0 +1,1473 @@
+{
+  "engagement_id": "eng-01_finclear_gmbh",
+  "client_doc_collection": "client_docs_eng_01_finclear_gmbh",
+  "client_submission": {
+    "stage_a": {
+      "provider_name": "FinClear GmbH",
+      "deployer_name": "Deutsche Partner Bank AG",
+      "system_name": "CreditGuard",
+      "version": "2.1",
+      "intended_purpose": "Assess creditworthiness of retail loan applicants using 20 financial and personal attributes to support human credit officers at Deutsche Partner Bank AG. Decisions are advisory; final approval rests with a licensed credit officer.",
+      "declared_modality": "tabular",
+      "declared_risk_tier": "high",
+      "declared_annex_iii_sections": [
+        "5"
+      ],
+      "deployment_context": "b2b",
+      "provider_elects_third_party": false,
+      "gdpr_overlap": true,
+      "gpai_general_purpose": false,
+      "special_category_data": false,
+      "art43_preview": "annex_vi_internal_control",
+      "cgsa_assessment_id": "finclear-creditguard-001",
+      "entity_type": [
+        "provider"
+      ],
+      "art25_status_change": [
+        "none"
+      ],
+      "annex_i_section_a": [],
+      "annex_i_section_b": [],
+      "third_party_ca_legally_required": false,
+      "art6_derogation_claimed": false,
+      "art6_derogation_rationale": null,
+      "territorial_scope": [
+        "placed_on_eu_market",
+        "established_in_eu"
+      ],
+      "gpai_systemic_risk": false,
+      "art2_exclusion": "none",
+      "art5_prohibited_practices": [],
+      "art50_transparency_triggers": [],
+      "is_public_body_or_public_service": false
+    },
+    "stage_b": {
+      "general_description": "Gradient-boosted tree classifier (XGBoost 2.0) trained on a proprietary 1000-instance German retail credit portfolio. Inputs: 20 features (financial standing, credit history, socio-demographic). Output: creditworthiness probability score [0,1] plus binary decision at calibrated threshold. Intended for human-in-the-loop decision support only.",
+      "model_type": "sklearn_gradient_boosting_classifier_v2.1",
+      "design_process": "Stratified 80/20 train/test split; 5-fold CV with grid-search over n_estimators and max_depth; calibration via isotonic regression; threshold tuned to maximise expected utility at asymmetric cost 1:5.",
+      "training_data_description": "FinClear proprietary credit dataset -- 1000 instances, 20 attributes (7 numerical, 13 categorical), binary target (1=creditworthy, 0=not). Class prior 70/30. Age variable retained under Art. 10 para 5 derogation for fairness monitoring only.",
+      "data_governance_measures": "Data minimisation per Art. 10 para 2(b); access restricted to model-risk team; annual re-collection audit; no enrichment from external broker data.",
+      "monitoring_measures": "Monthly production-sample AUC review; PSI drift monitoring on top-10 features (threshold PSI > 0.2); quarterly adversarial robustness re-probe.",
+      "logging_capabilities": "Per-prediction log: timestamp, hashed applicant_id, feature hash, model_version, score, threshold band, decision, human_override flag -- retained 10 years per Art. 12 para 1.",
+      "accuracy_metrics": {
+        "accuracy": 0.935,
+        "auc_roc": 0.9819,
+        "f1_score": 0.9312
+      },
+      "robustness_metrics": {
+        "adversarial_accuracy_l_inf_0_01": 0.74,
+        "psi_baseline_max": 0.04
+      },
+      "risk_management_file_uri": "minio://eng-01_finclear_gmbh/customer_uploads/risk_management_file_uri_2380ad8e_risk_management_file.txt",
+      "lifecycle_change_log": [
+        "v2.0 initial production release 2025-07-01",
+        "v2.1 fairness recalibration 2026-01-10"
+      ],
+      "harmonised_standards": [
+        "ISO/IEC 42001:2023",
+        "ISO/IEC 23894:2023",
+        "ISO/IEC TR 24028:2020",
+        "ISO/IEC 5259-1:2024"
+      ],
+      "other_standards": [
+        "EBA/GL/2019/04 ICT Risk Guidelines"
+      ],
+      "eu_doc_uri": "minio://eng-01_finclear_gmbh/customer_uploads/eu_doc_uri_443f8c3d_eu_declaration_of_conformity.txt",
+      "post_market_plan_uri": "minio://eng-01_finclear_gmbh/customer_uploads/post_market_plan_uri_98ca913e_post_market_monitoring_plan.txt",
+      "system_prompt_uri": null,
+      "rag_manifest_uri": null,
+      "tool_inventory": null,
+      "guardrail_config_uri": null,
+      "golden_set_uri": null,
+      "data_dictionary": {
+        "target_column": "credit_risk",
+        "positive_label": 1,
+        "sensitive_feature_columns": [
+          "personal_status",
+          "age",
+          "foreign_worker"
+        ]
+      },
+      "model_artifact_uri": "file://mocked_data//01_finclear_gmbh//model//finclear_creditguard_v2.1.joblib",
+      "evaluation_dataset_uri": "file://mocked_data//01_finclear_gmbh//datasets//finclear_evaluation_dataset.csv",
+      "training_dataset_uri": "file://mocked_data//01_finclear_gmbh//datasets//finclear_training_dataset.csv",
+      "model_artifact_kind": "single_file",
+      "model_entrypoint": null,
+      "model_format": "joblib",
+      "model_framework": "sklearn",
+      "task_type": "binary_classification",
+      "target_column": "credit_risk",
+      "positive_label": 1,
+      "sensitive_feature_columns": ["personal_status", "foreign_worker"],
+      "immutable_feature_columns": ["age", "credit_history"]
+    },
+    "stage_c": null,
+    "intake_completeness_score": 1.0
+  },
+  "scope_gate": {
+    "verdict": "in_scope",
+    "reasoning": [
+      "No pre-intake scoping flags raised; proceed to Stage B."
+    ],
+    "become_provider_under_art25": false,
+    "triggers_fria": false,
+    "triggers_art50_transparency": false,
+    "is_gpai_systemic": false,
+    "halt_engagement": false
+  },
+  "declared_modality": "tabular",
+  "declared_risk_tier": "high",
+  "declared_annex_iii_sections": [
+    "5"
+  ],
+  "risk_tier": "high",
+  "annex_iii_mapping": [
+    {
+      "annex_iii_section": "5",
+      "section_title": "Access to essential private/public services and benefits",
+      "use_case_marker": "credit",
+      "confidence": 0.75,
+      "provenance": "client_declared",
+      "derogation_claimed": false,
+      "derogation_rationale": null
+    }
+  ],
+  "modality": "tabular",
+  "deployment_context": "b2b",
+  "is_llm_or_agentic": false,
+  "provider_elects_third_party": false,
+  "harmonised_standards_applied": true,
+  "declaration_verification": {
+    "deployment_context": "match",
+    "gdpr_overlap": "match",
+    "gpai_general_purpose": "match",
+    "is_llm_or_agentic": "match",
+    "modality": "match",
+    "provider_elects_third_party": "match",
+    "risk_tier": "match",
+    "special_category_data": "match",
+    "annex_iii_\u00a75": "match"
+  },
+  "art43_decision": {
+    "procedure": "annex_vi_internal_control",
+    "rationale": "High-risk AI system with harmonised standards applied in full; internal control procedure permitted by Art. 43 \u00a72."
+  },
+  "phase_artefacts": {
+    "T01a_stage_a_triage": {
+      "uri": "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+      "sha256": "",
+      "template_id": "T01a_stage_a_triage"
+    },
+    "T01b_annex_iv_dossier": {
+      "uri": "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+      "sha256": "",
+      "template_id": "T01b_annex_iv_dossier"
+    },
+    "T01c_intake_completeness_report": {
+      "uri": "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+      "sha256": "",
+      "template_id": "T01c_intake_completeness_report"
+    },
+    "T02_system_card": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+      "sha256": "",
+      "template_id": "T02_system_card"
+    },
+    "T03_annex_iii_mapping": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+      "sha256": "",
+      "template_id": "T03_annex_iii_mapping"
+    },
+    "T04_risk_tier_decision": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+      "sha256": "",
+      "template_id": "T04_risk_tier_decision"
+    },
+    "T05_art43_decision": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+      "sha256": "",
+      "template_id": "T05_art43_decision"
+    },
+    "T06_datasheet_for_datasets": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+      "sha256": "",
+      "template_id": "T06_datasheet_for_datasets"
+    },
+    "T07_data_quality_report": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+      "sha256": "",
+      "template_id": "T07_data_quality_report"
+    },
+    "T08_special_category_data_log": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+      "sha256": "",
+      "template_id": "T08_special_category_data_log"
+    },
+    "T09_model_card": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+      "sha256": "",
+      "template_id": "T09_model_card"
+    },
+    "T10_explainability_report": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+      "sha256": "",
+      "template_id": "T10_explainability_report"
+    },
+    "T11_robustness_report": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json",
+      "sha256": "",
+      "template_id": "T11_robustness_report"
+    },
+    "T12_output_fairness_report": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+      "sha256": "",
+      "template_id": "T12_output_fairness_report"
+    },
+    "T13_output_sampling_log": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json",
+      "sha256": "",
+      "template_id": "T13_output_sampling_log"
+    },
+    "T14_governance_findings": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_5/T14_governance_findings_726f10bc.json",
+      "sha256": "",
+      "template_id": "T14_governance_findings"
+    },
+    "T15_monitoring_logging_review": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_5/T15_monitoring_logging_review_bc8700c0.json",
+      "sha256": "",
+      "template_id": "T15_monitoring_logging_review"
+    },
+    "T17_compliance_matrix": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_6/T17_compliance_matrix_2349711e.json",
+      "sha256": "2349711e916987fde7816fbe9e528e8d97ebad137525fa02b5c074762b28a4b5",
+      "template_id": "T17_compliance_matrix"
+    },
+    "T18_audit_report": {
+      "uri": "minio://eng-01_finclear_gmbh/phase_6/T18_audit_report_2ed2d442.json",
+      "sha256": "2ed2d4421b7c1357d82255dba7d4347a3e8bf8258352f04c5de2a8f98db66aa6",
+      "template_id": "T18_audit_report"
+    }
+  },
+  "cgsa_payload": {
+    "schema_version": "1.0.0",
+    "metadata": {
+      "assessment_id": "finclear-creditguard-001",
+      "organisation_name": "FinClear GmbH",
+      "system_under_audit": "CreditGuard v2.1",
+      "cgsa_version": "1.0.0",
+      "assessment_timestamp": "2026-05-28T09:00:00Z",
+      "risk_tier": "high",
+      "document_sources": [
+        "risk_management_file.txt",
+        "eu_declaration_of_conformity.txt",
+        "post_market_monitoring_plan.txt"
+      ],
+      "uagf_gmm_version": "1.0.0"
+    },
+    "overall_scores": {
+      "composite_maturity_score": 3.6,
+      "composite_maturity_label": "defined",
+      "eu_ai_act_coverage_pct": 95.0,
+      "csp_satisfiable": true,
+      "governance_verdict": "compliant",
+      "controls_assessed": 10,
+      "controls_meeting_threshold": 10,
+      "controls_below_threshold": 0
+    },
+    "domains": [
+      {
+        "domain_id": "D1",
+        "domain_name": "Risk Management",
+        "domain_score": 3.8,
+        "domain_eu_ai_act_articles": [
+          "Article 9"
+        ],
+        "controls": [
+          {
+            "control_id": "C01",
+            "control_name": "Risk Identification",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "Five-risk register with Art. 9 cross-refs; quarterly CRMO review.",
+            "confidence": 0.93,
+            "source_frameworks": [
+              "EU AI Act",
+              "ISO 42001"
+            ],
+            "eu_ai_act_articles": [
+              "Article 9"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          },
+          {
+            "control_id": "C02",
+            "control_name": "Risk Treatment & Monitoring",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "Mitigation measures documented and tested for all five risks.",
+            "confidence": 0.91,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 9"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      },
+      {
+        "domain_id": "D2",
+        "domain_name": "Data Governance",
+        "domain_score": 3.5,
+        "domain_eu_ai_act_articles": [
+          "Article 10"
+        ],
+        "controls": [
+          {
+            "control_id": "C07",
+            "control_name": "Data Quality Management",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "Data minimisation policy; quarterly source audit; Art. 10 para 5 derogation for age.",
+            "confidence": 0.9,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 10 point 2"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          },
+          {
+            "control_id": "C08",
+            "control_name": "Bias & Fairness Controls",
+            "maturity_score": 3,
+            "maturity_label": "defined",
+            "evidence_summary": "Demographic parity monitored monthly; equal-opportunity calibration applied.",
+            "confidence": 0.88,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 10"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      },
+      {
+        "domain_id": "D3",
+        "domain_name": "Model Development and Testing",
+        "domain_score": 3.7,
+        "domain_eu_ai_act_articles": [
+          "Article 15"
+        ],
+        "controls": [
+          {
+            "control_id": "C14",
+            "control_name": "Model Testing",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "5-fold CV AUC 0.82; adversarial probe at L-inf 0.01; calibration documented.",
+            "confidence": 0.94,
+            "source_frameworks": [
+              "ISO 42001"
+            ],
+            "eu_ai_act_articles": [
+              "Article 15"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      },
+      {
+        "domain_id": "D4",
+        "domain_name": "Transparency and Explainability",
+        "domain_score": 3.4,
+        "domain_eu_ai_act_articles": [
+          "Article 13"
+        ],
+        "controls": [
+          {
+            "control_id": "C20",
+            "control_name": "Model Card",
+            "maturity_score": 3,
+            "maturity_label": "defined",
+            "evidence_summary": "Model card includes intended purpose, limitations, fairness constraints, contact.",
+            "confidence": 0.87,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 13"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          },
+          {
+            "control_id": "C21",
+            "control_name": "SHAP / Explainability Reports",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "Per-prediction SHAP values available to credit officers; aggregate reports quarterly.",
+            "confidence": 0.89,
+            "source_frameworks": [
+              "ISO 42001"
+            ],
+            "eu_ai_act_articles": [
+              "Article 13"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      },
+      {
+        "domain_id": "D5",
+        "domain_name": "Human Oversight and Accountability",
+        "domain_score": 3.8,
+        "domain_eu_ai_act_articles": [
+          "Article 14"
+        ],
+        "controls": [
+          {
+            "control_id": "C26",
+            "control_name": "Human Oversight Roles",
+            "maturity_score": 4,
+            "maturity_label": "optimised",
+            "evidence_summary": "Two-person adverse-decision review; hard UI stop at confidence < 0.55.",
+            "confidence": 0.92,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 14"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      },
+      {
+        "domain_id": "D6",
+        "domain_name": "Monitoring and Incident Response",
+        "domain_score": 3.4,
+        "domain_eu_ai_act_articles": [
+          "Article 17",
+          "Article 72"
+        ],
+        "controls": [
+          {
+            "control_id": "C30",
+            "control_name": "Incident Response Procedures",
+            "maturity_score": 3,
+            "maturity_label": "defined",
+            "evidence_summary": "IR runbook with 15-day BaFin reporting SLA; PMM Plan v1.0 signed.",
+            "confidence": 0.86,
+            "source_frameworks": [
+              "EU AI Act",
+              "ISO 42001"
+            ],
+            "eu_ai_act_articles": [
+              "Article 72"
+            ],
+            "hard_constraint": {
+              "applicable": true,
+              "threshold_score": 3,
+              "satisfied": true
+            },
+            "gap_severity": null
+          },
+          {
+            "control_id": "C31",
+            "control_name": "Automated Monitoring & Alerts",
+            "maturity_score": 3,
+            "maturity_label": "defined",
+            "evidence_summary": "Weekly PSI dashboard; monthly AUC review; MLflow version registry.",
+            "confidence": 0.83,
+            "source_frameworks": [
+              "EU AI Act"
+            ],
+            "eu_ai_act_articles": [
+              "Article 72"
+            ],
+            "hard_constraint": {
+              "applicable": false,
+              "threshold_score": null,
+              "satisfied": true
+            },
+            "gap_severity": null
+          }
+        ]
+      }
+    ],
+    "eu_ai_act_compliance_matrix": {
+      "article_9": {
+        "article_reference": "Article 9",
+        "article_title": "Risk management system",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C01",
+          "C02"
+        ],
+        "controls_satisfied": [
+          "C01",
+          "C02"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "Full risk lifecycle with five risks assessed and accepted."
+      },
+      "article_10": {
+        "article_reference": "Article 10",
+        "article_title": "Data and data governance",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C07",
+          "C08"
+        ],
+        "controls_satisfied": [
+          "C07",
+          "C08"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "Data minimisation, quality, Art. 10 para 5 derogation documented."
+      },
+      "article_13": {
+        "article_reference": "Article 13",
+        "article_title": "Transparency to deployers",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C20",
+          "C21"
+        ],
+        "controls_satisfied": [
+          "C20",
+          "C21"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "Model card and per-prediction SHAP reports available."
+      },
+      "article_14": {
+        "article_reference": "Article 14",
+        "article_title": "Human oversight",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C26"
+        ],
+        "controls_satisfied": [
+          "C26"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "Two-person review and UI safeguards in place."
+      },
+      "article_15": {
+        "article_reference": "Article 15",
+        "article_title": "Accuracy and robustness",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C14"
+        ],
+        "controls_satisfied": [
+          "C14"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "AUC 0.82; adversarial robustness 0.74 at L-inf 0.01."
+      },
+      "article_17": {
+        "article_reference": "Article 17",
+        "article_title": "Quality management",
+        "status": "satisfied",
+        "controls_mapped": [
+          "C30",
+          "C31"
+        ],
+        "controls_satisfied": [
+          "C30",
+          "C31"
+        ],
+        "coverage_pct": 100.0,
+        "hard_constraints_violated": [],
+        "article_summary": "PMM plan and IR runbook in place."
+      }
+    },
+    "hard_constraint_results": {
+      "csp_satisfiable": true,
+      "total_hard_constraints": 18,
+      "violated_constraints": [],
+      "satisfied_constraints": [
+        {
+          "control_id": "C01",
+          "control_name": "Risk Identification",
+          "required_score": 3,
+          "actual_score": 4,
+          "eu_ai_act_article": "Article 9"
+        },
+        {
+          "control_id": "C07",
+          "control_name": "Data Quality Management",
+          "required_score": 3,
+          "actual_score": 4,
+          "eu_ai_act_article": "Article 10 point 2"
+        },
+        {
+          "control_id": "C14",
+          "control_name": "Model Testing",
+          "required_score": 3,
+          "actual_score": 4,
+          "eu_ai_act_article": "Article 15"
+        },
+        {
+          "control_id": "C20",
+          "control_name": "Model Card",
+          "required_score": 3,
+          "actual_score": 3,
+          "eu_ai_act_article": "Article 13"
+        },
+        {
+          "control_id": "C26",
+          "control_name": "Human Oversight Roles",
+          "required_score": 3,
+          "actual_score": 4,
+          "eu_ai_act_article": "Article 14"
+        },
+        {
+          "control_id": "C30",
+          "control_name": "Incident Response",
+          "required_score": 3,
+          "actual_score": 3,
+          "eu_ai_act_article": "Article 72"
+        }
+      ]
+    },
+    "remediation_roadmap": [],
+    "aaa_phase5_handoff": {
+      "phase5_verdict": "PASS",
+      "phase5_narrative_summary": "All six CGSA domains meet maturity threshold 3. CSP satisfiable across 18 hard constraints. EU AI Act coverage 95.0% (>= 80%). CreditGuard v2.1 demonstrates a mature governance posture with documented risk management, data quality controls, per-prediction SHAP explainability, two-person oversight, and post-market monitoring aligned with EU AI Act Articles 9, 10, 13, 14, 15, and 72.",
+      "blocking_findings_count": 0,
+      "blocking_findings": [],
+      "positive_findings": [
+        {
+          "control_id": "C01",
+          "control_name": "Risk Identification",
+          "maturity_score": 4,
+          "finding": "Comprehensive five-risk register with CRMO sign-off and quarterly review cycle."
+        },
+        {
+          "control_id": "C21",
+          "control_name": "SHAP Explainability",
+          "maturity_score": 4,
+          "finding": "Per-prediction SHAP values available to credit officers; aggregate feature importance published quarterly."
+        },
+        {
+          "control_id": "C26",
+          "control_name": "Human Oversight Roles",
+          "maturity_score": 4,
+          "finding": "Two-person adverse-decision review enforced at UI level with hard confidence threshold."
+        }
+      ],
+      "low_confidence_controls": [],
+      "aaa_recommended_follow_up": [
+        {
+          "recommendation": "Upgrade automated monitoring (C31) to optimised by Q3 2026.",
+          "rationale": "Real-time drift alerting would further reduce R-002 residual risk.",
+          "urgency": "recommended"
+        }
+      ],
+      "cgsa_report_url": "https://cgsa.example/reports/finclear-creditguard-001"
+    }
+  },
+  "cgsa_schema_version": "1.0.0",
+  "cgsa_composite_maturity_score": 3.6,
+  "cgsa_composite_maturity_label": "defined",
+  "cgsa_domain_scores": {
+    "D1 Risk Management": 3.8,
+    "D2 Data Governance": 3.5,
+    "D3 Model Development and Testing": 3.7,
+    "D4 Transparency and Explainability": 3.4,
+    "D5 Human Oversight and Accountability": 3.8,
+    "D6 Monitoring and Incident Response": 3.4
+  },
+  "cgsa_eu_ai_act_coverage_pct": 95.0,
+  "cgsa_csp_satisfiable": true,
+  "cgsa_governance_verdict": "compliant",
+  "cgsa_phase5_verdict": "PASS",
+  "cgsa_phase5_narrative": "All six CGSA domains meet maturity threshold 3. CSP satisfiable across 18 hard constraints. EU AI Act coverage 95.0% (>= 80%). CreditGuard v2.1 demonstrates a mature governance posture with documented risk management, data quality controls, per-prediction SHAP explainability, two-person oversight, and post-market monitoring aligned with EU AI Act Articles 9, 10, 13, 14, 15, and 72.",
+  "cgsa_blocking_findings": [],
+  "cgsa_positive_findings": [
+    {
+      "control_id": "C01",
+      "control_name": "Risk Identification",
+      "maturity_score": 4,
+      "finding": "Comprehensive five-risk register with CRMO sign-off and quarterly review cycle."
+    },
+    {
+      "control_id": "C21",
+      "control_name": "SHAP Explainability",
+      "maturity_score": 4,
+      "finding": "Per-prediction SHAP values available to credit officers; aggregate feature importance published quarterly."
+    },
+    {
+      "control_id": "C26",
+      "control_name": "Human Oversight Roles",
+      "maturity_score": 4,
+      "finding": "Two-person adverse-decision review enforced at UI level with hard confidence threshold."
+    }
+  ],
+  "cgsa_low_confidence_controls": [],
+  "cgsa_recommended_follow_up": [
+    {
+      "recommendation": "Upgrade automated monitoring (C31) to optimised by Q3 2026.",
+      "rationale": "Real-time drift alerting would further reduce R-002 residual risk.",
+      "urgency": "recommended"
+    }
+  ],
+  "cgsa_report_url": "https://cgsa.example/reports/finclear-creditguard-001",
+  "cgsa_risk_tier_match": true,
+  "compliance_matrix": {
+    "Annex_III": "PASS",
+    "Annex_IV": "PASS",
+    "Art.10": "FAIL",
+    "Art.10\u00a72(f)": "FAIL",
+    "Art.11": "PASS",
+    "Art.12": "PASS",
+    "Art.13": "PASS",
+    "Art.15": "FAIL",
+    "Art.15\u00a71": "FAIL",
+    "Art.17": "PASS",
+    "Art.43": "PASS",
+    "Art.5": "PASS",
+    "Art.50": "PASS",
+    "Art.6": "PASS",
+    "Art.72": "PASS",
+    "Art.9": "PASS"
+  },
+  "blocking_findings": [
+    {
+      "finding_id": "P4-FAIR-PERSONAL_STATUS",
+      "description": "Output fairness across 'personal_status' is PASS_WITH_OBSERVATIONS (disparate-impact ratio=0.914845, demographic-parity diff=0.16352201257861637).",
+      "materiality": "possibly_material",
+      "eu_ai_act_articles": [
+        "Art.10\u00a72(f)",
+        "Art.15\u00a71"
+      ],
+      "source_phase": "P4",
+      "recommendation": "Investigate and mitigate the group disparity before deployment.",
+      "control_id": null,
+      "declared": null,
+      "observed": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json"
+      ]
+    },
+    {
+      "finding_id": "P4-FAIR-AGE",
+      "description": "Output fairness across 'age' is FAIL (disparate-impact ratio=0.4, demographic-parity diff=1.0).",
+      "materiality": "material",
+      "eu_ai_act_articles": [
+        "Art.10\u00a72(f)",
+        "Art.15\u00a71"
+      ],
+      "source_phase": "P4",
+      "recommendation": "Investigate and mitigate the group disparity before deployment.",
+      "control_id": null,
+      "declared": null,
+      "observed": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json"
+      ]
+    },
+    {
+      "finding_id": "P4-FAIR-FOREIGN_WORKER",
+      "description": "Output fairness across 'foreign_worker' is FAIL (disparate-impact ratio=0.660099, demographic-parity diff=0.2379310344827586).",
+      "materiality": "material",
+      "eu_ai_act_articles": [
+        "Art.10\u00a72(f)",
+        "Art.15\u00a71"
+      ],
+      "source_phase": "P4",
+      "recommendation": "Investigate and mitigate the group disparity before deployment.",
+      "control_id": null,
+      "declared": null,
+      "observed": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json"
+      ]
+    }
+  ],
+  "positive_findings": [
+    {
+      "finding_id": "P3-METRIC-ACCURACY",
+      "description": "Declared accuracy 0.935 corroborated by independent re-computation (0.957; gap 0.022).",
+      "materiality": "observation",
+      "eu_ai_act_articles": [
+        "Art.15"
+      ],
+      "source_phase": "P3",
+      "control_id": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json"
+      ]
+    },
+    {
+      "finding_id": "P3-METRIC-ROC_AUC",
+      "description": "Declared AUC-ROC 0.982 corroborated by independent re-computation (0.989; gap 0.007).",
+      "materiality": "observation",
+      "eu_ai_act_articles": [
+        "Art.15"
+      ],
+      "source_phase": "P3",
+      "control_id": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json"
+      ]
+    },
+    {
+      "finding_id": "P3-METRIC-F1_MACRO",
+      "description": "Declared F1 0.931 corroborated by independent re-computation (0.957; gap 0.025).",
+      "materiality": "observation",
+      "eu_ai_act_articles": [
+        "Art.15"
+      ],
+      "source_phase": "P3",
+      "control_id": null,
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_a/T01a_stage_a_triage_63acd3d4.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json"
+      ]
+    }
+  ],
+  "remediation_roadmap": [],
+  "material_findings_count": 2,
+  "possibly_material_findings_count": 1,
+  "verifier_critiques": {
+    "T02_system_card": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 1 ScopeAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.5",
+        "Art.13"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T03_annex_iii_mapping": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 1 ScopeAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.6",
+        "Annex_III"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T04_risk_tier_decision": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 1 ScopeAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.5",
+        "Art.6"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T05_art43_decision": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 1 ScopeAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.43"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T06_datasheet_for_datasets": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 2 DataAuditor complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.10"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T07_data_quality_report": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 2 DataAuditor complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.10"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T08_special_category_data_log": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 2 DataAuditor complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.10"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T09_model_card": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 3 ModelValidator complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.13",
+        "Art.15"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T10_explainability_report": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 3 ModelValidator complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.13"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T11_robustness_report": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 3 ModelValidator complete. confidence=0.85"
+      ],
+      "article_citations": [
+        "Art.15"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T12_output_fairness_report": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 4 OutputFairnessTester complete. confidence=0.60"
+      ],
+      "article_citations": [
+        "Art.10\u00a72(f)",
+        "Art.15\u00a71"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T13_output_sampling_log": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 4 OutputFairnessTester complete. confidence=0.60"
+      ],
+      "article_citations": [
+        "Art.15\u00a71"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T14_governance_findings": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 5 GovernanceAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.9",
+        "Art.17"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T15_monitoring_logging_review": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 5 GovernanceAgent complete. confidence=0.90"
+      ],
+      "article_citations": [
+        "Art.12",
+        "Art.72"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T17_compliance_matrix": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 6 ReportArchitect complete. confidence=0.95"
+      ],
+      "article_citations": [
+        "Art.17"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    },
+    "T18_audit_report": {
+      "verdict": "accept",
+      "issues": [],
+      "notes": [
+        "Phase 6 ReportArchitect complete. confidence=0.95"
+      ],
+      "article_citations": [
+        "Art.43",
+        "Annex_IV"
+      ],
+      "rerun_required": false,
+      "scores": {},
+      "total_score": null,
+      "llm_fallback_mode": true
+    }
+  },
+  "intake_completeness_score": 1.0,
+  "completeness_score": 0.88,
+  "regulatory_coverage_pct": 93.3,
+  "final_verdict": "FAIL",
+  "auditor_opinion": {
+    "opinion_type": "adverse",
+    "opinion_paragraph": "In our opinion, due to the significance of the matters described in the Basis for Conclusion, CreditGuard is not in conformity with the applicable EU AI Act requirements assessed by UAGF-TAM.",
+    "basis_paragraph": "The final audit verdict is FAIL. Confirmed non-conformities on: Art.10, Art.10\u00a72(f), Art.15, Art.15\u00a71.",
+    "methodology_basis": "This conformity assessment was conducted in accordance with the UAGF-TAM audit protocol (v1.0.0), applying the methodology of ISAE 3000 (Revised) for non-financial assurance engagements and ISO 19011:2018 for audit programme management. The audit was performed by an automated multi-agent system; results should be reviewed by a qualified human auditor before regulatory submission under Article 43 of the EU AI Act.",
+    "scope_paragraph": "The assessment covered admitted intake artefacts, phase reports, verifier critiques, the T17 compliance matrix, and CGSA handoff evidence available to UAGF-TAM at report generation time. It did not extend beyond evidence admitted to the audit evidence store."
+  },
+  "phase_status": {
+    "T14_governance_findings": "M",
+    "T15_monitoring_logging_review": "M",
+    "T06_datasheet_for_datasets": "M",
+    "T07_data_quality_report": "M",
+    "T08_special_category_data_log": "M",
+    "T09_model_card": "M",
+    "T10_explainability_report": "M",
+    "T11_robustness_report": "M",
+    "T12_output_fairness_report": "M",
+    "T13_output_sampling_log": "M",
+    "T16_uagf_tam_l_evidence": "S",
+    "T02_system_card": "M",
+    "T03_annex_iii_mapping": "M",
+    "T04_risk_tier_decision": "M",
+    "T05_art43_decision": "M",
+    "T17_compliance_matrix": "M",
+    "T18_audit_report": "M"
+  },
+  "verified_modality": "tabular",
+  "verified_risk_tier": "high",
+  "art43_delta": false,
+  "_branch": "standard",
+  "hitl_required": true,
+  "hitl_reason": "Phase 4 fairness verdict is FAIL (FAIL).",
+  "spawn_cyber_subagent": true,
+  "cyber_spawn_rationale": "risk_tier=high \u2192 Cyber Sub-Agent per \u00a73.3.",
+  "spawn_privacy_subagent": true,
+  "privacy_spawn_rationale": "gdpr_overlap=true \u2192 Privacy/DPO Sub-Agent per \u00a73.3.",
+  "article_evidence": {
+    "Annex_III": {
+      "supporting_template_ids": [
+        "T03_annex_iii_mapping"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T03_annex_iii_mapping) with no findings raised."
+    },
+    "Annex_IV": {
+      "supporting_template_ids": [
+        "T01b_annex_iv_dossier",
+        "T01c_intake_completeness_report"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json",
+        "minio://eng-01_finclear_gmbh/stage_b/T01c_intake_completeness_report_a2daabc7.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T01b_annex_iv_dossier, T01c_intake_completeness_report) with no findings raised."
+    },
+    "Art.10": {
+      "supporting_template_ids": [
+        "T06_datasheet_for_datasets",
+        "T07_data_quality_report",
+        "T08_special_category_data_log"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_2/T06_datasheet_for_datasets_04b4ed12.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T07_data_quality_report_e5abdeec.json",
+        "minio://eng-01_finclear_gmbh/phase_2/T08_special_category_data_log_72d83953.json"
+      ],
+      "cgsa_control_ids": [
+        "C07",
+        "C08"
+      ],
+      "finding_ids": [
+        "P4-FAIR-PERSONAL_STATUS",
+        "P4-FAIR-AGE",
+        "P4-FAIR-FOREIGN_WORKER"
+      ],
+      "rationale": "Material non-conformity from independent analysis: Output fairness across 'personal_status' is PASS_WITH_OBSERVATIONS (disparate-impact ratio=0.914845, demographic-parity diff=0.16352201257861637).; Output fairness across 'age' is FAIL (disparate-impact ratio=0.4, demographic-parity diff=1.0).; Output fairness across 'foreign_worker' is FAIL (dispar."
+    },
+    "Art.10\u00a72(f)": {
+      "supporting_template_ids": [
+        "T12_output_fairness_report"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json"
+      ],
+      "cgsa_control_ids": [
+        "C07",
+        "C08"
+      ],
+      "finding_ids": [
+        "P4-FAIR-PERSONAL_STATUS",
+        "P4-FAIR-AGE",
+        "P4-FAIR-FOREIGN_WORKER"
+      ],
+      "rationale": "Material non-conformity from independent analysis: Output fairness across 'personal_status' is PASS_WITH_OBSERVATIONS (disparate-impact ratio=0.914845, demographic-parity diff=0.16352201257861637).; Output fairness across 'age' is FAIL (disparate-impact ratio=0.4, demographic-parity diff=1.0).; Output fairness across 'foreign_worker' is FAIL (dispar."
+    },
+    "Art.11": {
+      "supporting_template_ids": [
+        "T01b_annex_iv_dossier"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/stage_b/T01b_annex_iv_dossier_4bf4baa3.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T01b_annex_iv_dossier) with no findings raised."
+    },
+    "Art.12": {
+      "supporting_template_ids": [
+        "T15_monitoring_logging_review"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_5/T15_monitoring_logging_review_bc8700c0.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T15_monitoring_logging_review) with no findings raised."
+    },
+    "Art.13": {
+      "supporting_template_ids": [
+        "T02_system_card",
+        "T09_model_card",
+        "T10_explainability_report"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T10_explainability_report_6ac1da8a.json"
+      ],
+      "cgsa_control_ids": [
+        "C20",
+        "C21"
+      ],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T02_system_card, T09_model_card, T10_explainability_report) with no findings raised."
+    },
+    "Art.15": {
+      "supporting_template_ids": [
+        "T09_model_card",
+        "T11_robustness_report",
+        "T12_output_fairness_report"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_3/T09_model_card_7f94f22f.json",
+        "minio://eng-01_finclear_gmbh/phase_3/T11_robustness_report_5b4bf195.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json"
+      ],
+      "cgsa_control_ids": [
+        "C14"
+      ],
+      "finding_ids": [
+        "P4-FAIR-PERSONAL_STATUS",
+        "P4-FAIR-AGE",
+        "P4-FAIR-FOREIGN_WORKER"
+      ],
+      "rationale": "Material non-conformity from independent analysis: Output fairness across 'personal_status' is PASS_WITH_OBSERVATIONS (disparate-impact ratio=0.914845, demographic-parity diff=0.16352201257861637).; Output fairness across 'age' is FAIL (disparate-impact ratio=0.4, demographic-parity diff=1.0).; Output fairness across 'foreign_worker' is FAIL (dispar."
+    },
+    "Art.15\u00a71": {
+      "supporting_template_ids": [
+        "T12_output_fairness_report",
+        "T13_output_sampling_log"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json"
+      ],
+      "cgsa_control_ids": [
+        "C14"
+      ],
+      "finding_ids": [
+        "P4-FAIR-PERSONAL_STATUS",
+        "P4-FAIR-AGE",
+        "P4-FAIR-FOREIGN_WORKER"
+      ],
+      "rationale": "Material non-conformity from independent analysis: Output fairness across 'personal_status' is PASS_WITH_OBSERVATIONS (disparate-impact ratio=0.914845, demographic-parity diff=0.16352201257861637).; Output fairness across 'age' is FAIL (disparate-impact ratio=0.4, demographic-parity diff=1.0).; Output fairness across 'foreign_worker' is FAIL (dispar."
+    },
+    "Art.17": {
+      "supporting_template_ids": [
+        "T14_governance_findings"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_5/T14_governance_findings_726f10bc.json"
+      ],
+      "cgsa_control_ids": [
+        "C30",
+        "C31"
+      ],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T14_governance_findings) with no findings raised."
+    },
+    "Art.43": {
+      "supporting_template_ids": [
+        "T05_art43_decision"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_1/T05_art43_decision_4c7af477.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T05_art43_decision) with no findings raised."
+    },
+    "Art.5": {
+      "supporting_template_ids": [
+        "T02_system_card",
+        "T04_risk_tier_decision"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_1/T02_system_card_cb571a52.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T02_system_card, T04_risk_tier_decision) with no findings raised."
+    },
+    "Art.50": {
+      "supporting_template_ids": [
+        "T12_output_fairness_report",
+        "T13_output_sampling_log"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_4/T12_output_fairness_report_624c383d.json",
+        "minio://eng-01_finclear_gmbh/phase_4/T13_output_sampling_log_637a0489.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T12_output_fairness_report, T13_output_sampling_log) with no findings raised."
+    },
+    "Art.6": {
+      "supporting_template_ids": [
+        "T03_annex_iii_mapping",
+        "T04_risk_tier_decision"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_1/T03_annex_iii_mapping_39d802ca.json",
+        "minio://eng-01_finclear_gmbh/phase_1/T04_risk_tier_decision_cd66ff77.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T03_annex_iii_mapping, T04_risk_tier_decision) with no findings raised."
+    },
+    "Art.72": {
+      "supporting_template_ids": [
+        "T15_monitoring_logging_review"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_5/T15_monitoring_logging_review_bc8700c0.json"
+      ],
+      "cgsa_control_ids": [],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T15_monitoring_logging_review) with no findings raised."
+    },
+    "Art.9": {
+      "supporting_template_ids": [
+        "T14_governance_findings"
+      ],
+      "evidence_uris": [
+        "minio://eng-01_finclear_gmbh/phase_5/T14_governance_findings_726f10bc.json"
+      ],
+      "cgsa_control_ids": [
+        "C01",
+        "C02"
+      ],
+      "finding_ids": [],
+      "rationale": "Admitted, verifier-accepted evidence (T14_governance_findings) with no findings raised."
+    }
+  },
+  "opinion_disclaimer": false
+}

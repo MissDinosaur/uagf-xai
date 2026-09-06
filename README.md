@@ -6,6 +6,26 @@ technical-audit context into an auditable evidence plan, executes compatible
 explainability and monitoring methods, and generates structured HTML and PDF
 audit reports.
 
+## Table of Contents
+
+- [UAGF Research Platform](#uagf-research-platform)
+  - [Upstream S4: UAGF-GMM/CGSA](#upstream-s4-uagf-gmmcgsa)
+  - [Upstream S5: UAGF-TAM/AAA](#upstream-s5-uagf-tamaaa)
+- [S6 Thesis Project: UAGF-XAI](#s6-thesis-project-uagf-xai)
+- [Implemented Evidence Pathways](#implemented-evidence-pathways)
+  - [Traditional ML: four evidence layers](#traditional-ml-four-evidence-layers)
+  - [LLM / Agentic pathway](#llm--agentic-pathway)
+- [Evidence Tools: Purpose and Audit Role](#evidence-tools-purpose-and-audit-role)
+- [Project Architecture](#project-architecture)
+  - [Repository Structure](#repository-structure)
+  - [Project Workflow](#project-workflow)
+  - [Constraint-Based Evidence Planner (CBEP)](#constraint-based-evidence-planner-cbep)
+- [Resource Contracts and Model Integrity](#resource-contracts-and-model-integrity)
+- [Five Validation Domains and Six Final Cases](#five-validation-domains-and-six-final-cases)
+- [Environment Setup](#environment-setup)
+- [Running this Framework for Your Cases](#running-this-framework-for-your-cases)
+- [Tests](#tests)
+
 ## UAGF Research Platform
 
 UAGF is a research programme for connecting organizational AI governance,
@@ -59,7 +79,7 @@ provides:
 - target, positive-label, sensitive-feature, and counterfactual-policy
   metadata where applicable.
 
-S5 supplies five of the six final validation cases. The sixth case is an
+S5 supplies five of the six final validation cases, including their model and data resources. The sixth case is an
 explicitly S6-owned local LLM execution-validation configuration and is not
 represented as an S5 delivery.
 
@@ -108,8 +128,7 @@ The LLM pathway uses the professor-defined method names and ordering:
 | LLM-E3 | Semantic Drift Index | Controlled semantic change between baseline and current prompt sets |
 | LLM-E4 | Differential Prompt Fairness | Output sensitivity across explicitly matched demographic prompt pairs |
 
-Aequitas, MC Dropout, automatic protected-attribute inference, external model
-downloads, and fabricated LLM predictions are not part of the final scope.
+
 
 ## Evidence Tools: Purpose and Audit Role
 
@@ -348,10 +367,25 @@ behavior. CBEP decides which applicable methods are required; the report keeps
 their outputs, limitations, and execution status separate rather than merging
 them into one unsupported compliance score.
 
-## Architecture and End-to-End Workflow
+## Project Architecture
+### Repository Structure
 
-The same workflow is used in the thesis notes and UAGF platform documentation.
-It makes the two independent S6 inputs explicit: CBEP receives normalized
+```text
+adapters/      S4 and S5 normalization
+api/           orchestration boundary
+resources/     artifact, model, dataset, LLM, and local-config loading
+planner/       CBEP rules and planning trace
+schema/        canonical method catalogue and EvidenceResult schema
+pipeline/      execution dispatch and evidence normalization
+layers/        traditional ML and LLM evidence runners
+report/        report model, ordering, provenance, HTML template, and PDF export
+data/          five formal S5 cases and one S6 local validation case
+outputs/       generated evidence artifacts and final reports
+tests/         unit/regression suite and optional integration coverage
+```
+
+### Project Workflow
+The workflow shown as below, makes the two independent S6 inputs explicit: CBEP receives normalized
 contexts, while ResourceLoader resolves execution resources. The method plan
 and `ResourceBundle` meet only at the Executor boundary.
 
@@ -445,13 +479,12 @@ never selects evidence methods, `GovernanceContext` is used only by CBEP, and
 - Evidence status is explicit: `completed`, `skipped`, `failed`, or
   `not_applicable`.
 
-## Constraint-Based Evidence Planner
+### Constraint-Based Evidence Planner (CBEP)
 
 CBEP is the core thesis contribution. It is a deterministic,
-constraint-informed planner inspired by constraint satisfaction theory. It
-does not claim to use a generic CSP solver. The S5 `csp_satisfied` field is an
-upstream audit-status signal that can broaden the sweep; it is not an S6 solver
-result.
+constraint-informed planner inspired by constraint satisfaction theory. The final implementation does not use a strictly generic CSP solver. Instead, CBEP is rule-based because the planning problem in this thesis is defined by a limited and explicit catalogue of evidence methods, together with transparent risk, governance, regulatory, task, and modality rules. Thus, a rule-based procedure is better to provide sufficient expressive power while making each selection and exclusion easier to trace, test, and explain. 
+
+It encodes a fixed sequence of planning rules and returns both the ordered plan and a complete trace of method-level decisions. Below is its workflow.
 
 ```text
                  ┌──────────────────────────────────┐
@@ -488,7 +521,7 @@ result.
                     └─────────────┬───────┘
                                   ▼
                  ┌──────────────────────────────────┐
-                 │ S5 csp_satisfied?                │
+                 │         S5 csp_satisfied?        │
                  └────────────────┬─────────────────┘
                           ┌───────┴───────┐
                     False ▼               ▼ True
@@ -503,12 +536,12 @@ result.
                  └────────────────┬─────────────────┘
                                   ▼
                  ┌──────────────────────────────────┐
-                 │ Task + Modality Compatibility    │
+                 │   Task + Modality Compatibility  │
                  └────────────────┬─────────────────┘
                     ┌─────────────┴─────────────┐
                     ▼                           ▼
        ┌────────────────────────┐  ┌────────────────────────┐
-       │ Compatible Methods     │  │ Incompatible Methods   │
+       │  Compatible Methods    │  │ Incompatible Methods   │
        └────────────┬───────────┘  │ + Exclusion Reasons    │
                     ▼              └────────────┬───────────┘
        ┌────────────────────────┐               │
@@ -522,15 +555,15 @@ result.
                     └─────────────┬─────────────┘
                                   ▼
                  ┌──────────────────────────────────┐
-                 │ Final Plan + Auditable Trace     │
+                 │  Final Plan + Auditable Trace    │
                  └────────────────┬─────────────────┘
                                   ▼
                  ┌──────────────────────────────────┐
-                 │ Evidence Executor                │
+                 │         Evidence Executor        │
                  └──────────────────────────────────┘
 ```
 
-### Planning inputs and rules
+#### Planning inputs and rules
 
 CBEP combines:
 
@@ -613,12 +646,6 @@ surrogate.
 | General NLP | TalentSift GmbH | S5 | High | Traditional ML / text / binary classification |
 | LLM / Agentic | LegalMind AI Ltd and S6 local DistilGPT2 | S5 plus S6 local | High | Agentic/LLM / text / generation |
 
-The HarbourLogistik case is the practical implementation used for the original
-energy/operational-monitoring validation slot. It audits critical-infrastructure
-sensor anomaly detection rather than the early Exposé example of tabular energy
-regression. This implementation adjustment should be stated explicitly in the
-thesis.
-
 ### Case 1 — FinClear GmbH: Finance
 
 - **Contract:** formal S5 traditional ML, single-file joblib artifact.
@@ -699,7 +726,7 @@ thesis.
 - **Interpretation:** this validates LLM evidence-path mechanics; the scores are
   not an audit of the LegalMind model.
 
-## Unified Evidence and Reports
+### Unified Evidence and Reports
 
 All runners cross the reporting boundary through the same schema:
 
@@ -727,21 +754,6 @@ Final reports are written under `outputs/report/`; supporting method artifacts
 are written under directories such as `outputs/shap/`, `outputs/lime/`,
 `outputs/dice/`, and `outputs/drift/`.
 
-## Repository Structure
-
-```text
-adapters/      S4 and S5 normalization
-api/           orchestration boundary
-resources/     artifact, model, dataset, LLM, and local-config loading
-planner/       CBEP rules and planning trace
-schema/        canonical method catalogue and EvidenceResult schema
-pipeline/      execution dispatch and evidence normalization
-layers/        traditional ML and LLM evidence runners
-report/        report model, ordering, provenance, HTML template, and PDF export
-data/          five formal S5 cases and one S6 local validation case
-outputs/       generated evidence artifacts and final reports
-tests/         unit/regression suite and optional integration coverage
-```
 
 ## Environment Setup
 
@@ -770,22 +782,65 @@ PDF export requires Playwright Chromium:
 python -m playwright install chromium
 ```
 
-## Running the Six Cases
+## Running this Framework for Your Cases
 
-Formal S5 cases:
+### Option 1: Install and run from PyPI
+
+UAGF-XAI is published on PyPI and can be installed in a Python 3.12 virtual environment:
 
 ```bash
-python main.py --mode s5 --s4-json data/01_finclear_gmbh/s4_finclear-creditguard-001.json --s5-json data/01_finclear_gmbh/s5_finclear_gmbh_audit_state.json
-python main.py --mode s5 --s4-json data/02_retailiq_ag/s4_retailiq-demandpulse-001.json --s5-json data/02_retailiq_ag/s5_retailiq_ag_audit_state.json
-python main.py --mode s5 --s4-json data/03_harbourlogistik_gmbh/s4_harbourlogistik-harboursense-001.json --s5-json data/03_harbourlogistik_gmbh/s5_harbourlogistik_gmbh_audit_state.json
-python main.py --mode s5 --s4-json data/04_legalmindd_ai_ltd/s4_legalmindd-lexai-001.json --s5-json data/04_legalmindd_ai_ltd/s5_legalmindd_ai_ltd_audit_state.json
-python main.py --mode s5 --s4-json data/05_talentsift_gmbh/s4_talentsift-talentrank-001.json --s5-json data/05_talentsift_gmbh/s5_talentsift_gmbh_audit_state.json
+python -m pip install uagf-xai
 ```
 
-S6 local LLM execution validation:
+Run a formal S4/S5-driven audit through the installed command-line interface:
 
 ```bash
-python main.py --mode local
+uagf-xai --mode s5 \
+  --s4-json path/to/s4_governance_context.json \
+  --s5-json path/to/s5_audit_context.json \
+  --no-pdf
+```
+
+The S4/S5 JSON files, model artifacts, and datasets are supplied externally;
+they are not bundled with the PyPI package. Relative resource paths in the S5
+contract are resolved from the current working directory. Generated artifacts
+are written under `./outputs/`.
+
+For HTML and PDF report generation, install the PDF extra and Playwright's
+Chromium browser, then omit `--no-pdf`:
+
+```bash
+python -m pip install "uagf-xai[pdf]"
+python -m playwright install chromium
+
+uagf-xai --mode s5 \
+  --s4-json path/to/s4_governance_context.json \
+  --s5-json path/to/s5_audit_context.json
+```
+
+Install the optional LLM dependencies when executing a complete local LLM or
+agentic model artifact:
+
+```bash
+python -m pip install "uagf-xai[llm]"
+```
+
+### Option 2: Run from Source via `main.py`
+
+After cloning the repository and installing `requirements.txt`, run a formal
+S4/S5-driven audit by supplying the S4 governance context and S5 audit context.
+The referenced model and dataset resources must also be locally accessible.
+
+```bash
+# Run the included FinClear validation case
+python main.py --mode s5 \
+  --s4-json mocked_data/01_finclear_gmbh/s4_finclear-creditguard-001.json \
+  --s5-json mocked_data/01_finclear_gmbh/s5_finclear_gmbh_audit_state.json
+
+# Run an audit with your own input files
+python main.py --mode s5 \
+  --s4-json path/to/s4_governance_context.json \
+  --s5-json path/to/s5_audit_context.json
 ```
 
 All commands generate HTML and PDF by default. Use `--no-pdf` only for an
@@ -799,8 +854,8 @@ Run the default offline suite:
 python -m pytest -q
 ```
 
-The final suite contains 17 test modules and 114 test functions. Parametrization
-produces 128 passing cases in the default offline suite. It covers adapters,
+The final suite contains 17 test modules and 113 test functions. Parametrization
+produces 120 passing cases in the default offline suite. It covers adapters,
 resource contracts, exact-model integrity, CBEP, compatibility filtering,
 evidence normalization, traditional and LLM methods, report semantics,
 provenance, ordering, and PDF export.

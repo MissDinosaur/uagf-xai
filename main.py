@@ -17,6 +17,7 @@ from api.audit_api import audit
 from resources.local_llm_validation_config import LocalLLMValidationConfig
 
 
+# Default parameters for the S6 local DistilGPT2 execution-validation case
 DEFAULT_LOCAL_CONFIG = (
     "data/04b_local_distilgpt2_llm/s6_local_llm_validation_config.json"
 )

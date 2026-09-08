@@ -1,3 +1,4 @@
+import base64
 import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import os
@@ -16,6 +17,27 @@ from report.runtime_metadata import (
 def _to_json_pretty(value):
     """Jinja2 filter: convert any value to indented JSON string."""
     return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+
+
+def _image_data_uri(artifact_path):
+    """Embed a local PNG or JPEG artifact without replacing its source path."""
+    path_text = str(artifact_path or "")
+    mime_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+    }.get(Path(path_text).suffix.lower())
+    if not mime_type:
+        return None
+
+    image_path = Path(path_text.removeprefix("file://"))
+    if not image_path.is_absolute():
+        image_path = Path.cwd() / image_path
+    if not image_path.is_file():
+        return None
+
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def _section_label(key: str) -> str:
@@ -130,6 +152,8 @@ def generate_report(
             provider_name=case_name,
             runtime_context=report_runtime_context,
         )
+        for finding in report_model.get("evidence_findings", []):
+            finding["embedded_plot"] = _image_data_uri(finding.get("plot"))
         return template.render(
             sections=report_sections,
             risk_level=risk_level,

@@ -327,7 +327,11 @@
         {% if finding.table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
         {% if finding.secondary_table_title %}<h3>{{ finding.secondary_table_title }}</h3>{% endif %}
         {% if finding.secondary_table %}<div class="table-wrap"><table><thead><tr>{% for header in finding.secondary_table.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in finding.secondary_table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
-        {% if finding.plot %}<img class="plot" src="../../{{ finding.plot }}" alt="{{ finding.method }} evidence visualization">{% endif %}
+        {% if finding.plot %}
+        {% set plot_src = finding.embedded_plot or '../../' ~ finding.plot %}
+        <img class="plot" src="{{ plot_src }}"
+             alt="{{ finding.method }} evidence visualization">
+        {% endif %}
         {% if finding.output %}<p><a href="../../{{ finding.output }}">{{ finding.output_label }}</a></p>{% endif %}
         {% for limitation in finding.limitations %}<div class="callout limitation"><strong>Interpretation limitation:</strong> {{ limitation }}</div>{% endfor %}
       </div>

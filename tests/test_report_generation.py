@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 from adapters.s5_audit_adapter import AuditContext
@@ -610,3 +611,42 @@ def test_harbour_report_distinguishes_model_and_contextual_features(
     assert "Supplementary contextual / excluded columns" in html
     assert "crane_id, visibility_m" in html
     assert "Model-input drift not detected; share 0.076923" in html
+
+
+def test_report_embeds_png_artifact_and_remains_portable(
+    tmp_path,
+    monkeypatch,
+    traditional_audit_context,
+    governance_context,
+):
+    png_base64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAusB9Y9Z8pAAAAAASUVORK5CYII="
+    )
+    image_path = tmp_path / "shap_summary.png"
+    image_path.write_bytes(base64.b64decode(png_base64))
+    result = completed_evidence(
+        evidence_id="EXP-SHAP",
+        layer="explainability",
+        method="SHAP",
+        article_mapping=["Art. 13"],
+        summary="Portable SHAP evidence.",
+        artifacts=[str(image_path)],
+        raw_output={"plot": str(image_path)},
+    )
+
+    output, html, _ = _generate(
+        tmp_path,
+        monkeypatch,
+        {"explainability": result, "_cbep_trace": _trace(["shap"])},
+        traditional_audit_context,
+        governance_context,
+        filename="portable_report.html",
+    )
+
+    expected_uri = f"data:image/png;base64,{png_base64}"
+    assert f'<img class="plot" src="{expected_uri}"' in html
+    assert str(image_path) in html
+    image_path.unlink()
+    assert not image_path.exists()
+    assert expected_uri in output.read_text(encoding="utf-8")
